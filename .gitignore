@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+env/
+venv/
+.env
+.DS_Store
+data/log_supervisor.txt
+data/dashboard.json
