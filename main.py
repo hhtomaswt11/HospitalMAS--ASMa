@@ -44,28 +44,28 @@ async def main():
     # Médico
     medico1 = AgenteMedico(
         jid(MEDICO1), PASSWORD,
-        nome_medico="Dr. Silva (Pediatra)"
+        nome_medico=AGENT_REGISTRY[jid(MEDICO1)]["name"]
     )
     await medico1.start(auto_register=True)
 
     # Sala
     sala1 = AgenteSala(
         jid(SALA1), PASSWORD,
-        nome_sala="Sala Pediatria 1"
+        nome_sala=AGENT_REGISTRY[jid(SALA1)]["name"]
     )
     await sala1.start(auto_register=True)
 
-    # Sala de Raio-X (reutiliza AgenteSala — Fase 4)
+    # Sala de Raio-X
     sala_raiox = AgenteSala(
         jid(SALA_RAIOX), PASSWORD,
-        nome_sala="Sala de Raio-X"
+        nome_sala=AGENT_REGISTRY[jid(SALA_RAIOX)]["name"]
     )
     await sala_raiox.start(auto_register=True)
 
-    # Bloco Operatório (reutiliza AgenteSala — Fase 4)
+    # Bloco Operatório
     bloco_op = AgenteSala(
         jid(BLOCO_OPERATORIO), PASSWORD,
-        nome_sala="Bloco Operatório Principal"
+        nome_sala=AGENT_REGISTRY[jid(BLOCO_OPERATORIO)]["name"]
     )
     await bloco_op.start(auto_register=True)
 
@@ -108,7 +108,7 @@ async def main():
 
     doente_n1 = AgenteDoente(
         jid(DOENTE_N1), PASSWORD,
-        nome_doente="João (8 anos)",
+        nome_doente=AGENT_REGISTRY[jid(DOENTE_N1)]["name"],
         tipo_entrada="Normal",
         sintomas="Febre ligeira, tosse",
         prioridade=2,
@@ -127,7 +127,7 @@ async def main():
 
     doente_n2 = AgenteDoente(
         jid(DOENTE_N2), PASSWORD,
-        nome_doente="Maria (5 anos)",
+        nome_doente=AGENT_REGISTRY[jid(DOENTE_N2)]["name"],
         tipo_entrada="Normal",
         sintomas="Dor de ouvido",
         prioridade=1,
@@ -146,7 +146,7 @@ async def main():
 
     doente_u1 = AgenteDoente(
         jid(DOENTE_U1), PASSWORD,
-        nome_doente="Pedro (3 anos)",
+        nome_doente=AGENT_REGISTRY[jid(DOENTE_U1)]["name"],
         tipo_entrada="Urgencia",
         sintomas="Dificuldade respiratória aguda, cianose",
         prioridade=0,  # Prioridade será atualizada pela Triagem

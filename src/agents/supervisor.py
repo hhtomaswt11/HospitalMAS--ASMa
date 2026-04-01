@@ -19,7 +19,8 @@ def dump_state():
         with open("data/dashboard.json", "w", encoding="utf-8") as f:
             json.dump({
                 "resources": GLOBAL_DASHBOARD,
-                "logs": RECENT_LOGS
+                "logs": RECENT_LOGS,
+                "registry": AGENT_REGISTRY
             }, f, ensure_ascii=False)
     except Exception:
         pass

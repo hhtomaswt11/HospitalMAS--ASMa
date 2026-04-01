@@ -5,7 +5,10 @@ import os
 from datetime import datetime
 from dotenv import load_dotenv
 
-load_dotenv()
+#load_dotenv()
+
+from src.patch import apply_xmpp_patch
+apply_xmpp_patch()
 
 # XMPP Server Configuration
 XMPP_SERVER = os.getenv("XMPP_SERVER", "127.0.0.1")
@@ -29,10 +32,29 @@ DOENTE_U1 = "doente_urgente1"
 SALA_RAIOX = "sala_raiox"
 BLOCO_OPERATORIO = "bloco_operatorio"
 
-# Global Resource Lists
-MEDICOS = [jid(MEDICO1)]
-SALAS = [jid(SALA1)]
-EQUIPAMENTOS = [jid(SALA_RAIOX)]
+# Agent Resource Mapping (Registry)
+# This serves as the source of truth for names and visual roles in the dashboard.
+AGENT_REGISTRY = {
+    jid(MEDICO1): {"name": "Dr. José", "type": "Pediatra", "role": "medic"},
+    jid(SALA1): {"name": "Consultório 1", "wing": "primary", "role": "room"},
+    jid(SALA_RAIOX): {"name": "Sala de Raio-X", "wing": "specialized", "role": "room"},
+    jid(BLOCO_OPERATORIO): {"name": "Bloco Operatório", "wing": "surgical", "role": "room"},
+    
+    # Patients (Dynamic names mapped by JID)
+    jid(DOENTE_N1): {"name": "João", "type": "Rotina", "role": "patient"},
+    jid(DOENTE_N2): {"name": "Maria", "type": "Rotina", "role": "patient"},
+    jid(DOENTE_U1): {"name": "Pedro", "type": "Urgência", "role": "patient"},
+
+    # Infrastructure / Coordinators (Optional for visual registry)
+    jid(TRIAGEM): {"name": "Triagem Principal", "role": "infra"},
+    jid(SUPERVISOR): {"name": "Supervisor de Ala", "role": "infra"},
+}
+
+# Global Resource Lists (Derived from Registry for consistency)
+MEDICOS = [k for k, v in AGENT_REGISTRY.items() if v.get("role") == "medic"]
+SALAS = [k for k, v in AGENT_REGISTRY.items() if v.get("role") == "room" and v.get("wing") == "primary"]
+EQUIPAMENTOS = [k for k, v in AGENT_REGISTRY.items() if v.get("role") == "room" and v.get("wing") == "specialized"]
+# For backward compatibility with existing hardcoded lists
 BLOCOS = [jid(BLOCO_OPERATORIO)]
 
 # Logging Configuration

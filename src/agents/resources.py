@@ -166,15 +166,25 @@ class AgenteMedico(Agent):
                 })
                 await self.send(msg_exame)
                 
+                log(self.agent.nome_medico, f"[TRANSITO] {nome} encaminhado para diagnóstico. A libertar Consultório para novo uso.", "CYAN")
+                
+                # 1. Libertar sala de consulta IMEDIATAMENTE (o doente já saiu para o exame)
+                msg_free_sala_urg = Message(to=jid(SALA1))
+                msg_free_sala_urg.set_metadata("performative", "inform")
+                msg_free_sala_urg.set_metadata("type", "release")
+                await self.send(msg_free_sala_urg)
+
+                # 2. Aguardar resultados do exame
                 await asyncio.sleep(6)
                 log(self.agent.nome_medico, f"[CLÍNICA] Resultados de diagnóstico recebidos para {nome}. A solicitar intervenção cirúrgica urgente.", "MAGENTA")
                 
-                # Libertar equipamento de diagnóstico
+                # 3. Libertar equipamento de diagnóstico (MCDT concluído)
                 msg_free_raiox = Message(to=jid(SALA_RAIOX))
                 msg_free_raiox.set_metadata("performative", "inform")
                 msg_free_raiox.set_metadata("type", "release")
                 await self.send(msg_free_raiox)
                 
+                # 4. Solicitar Bloco Operatório
                 msg_cirurgia = Message(to=jid(COORD_CIR))
                 msg_cirurgia.set_metadata("performative", "request")
                 msg_cirurgia.set_metadata("type", "surgery_request")
@@ -185,12 +195,6 @@ class AgenteMedico(Agent):
                     "solicitante": str(self.agent.jid)
                 })
                 await self.send(msg_cirurgia)
-
-                # Libertar sala de consulta (doente de urgência foi encaminhado para Bloco)
-                msg_free_sala_urg = Message(to=jid(SALA1))
-                msg_free_sala_urg.set_metadata("performative", "inform")
-                msg_free_sala_urg.set_metadata("type", "release")
-                await self.send(msg_free_sala_urg)
             else:
                 log(self.agent.nome_medico, f"[CLÍNICA] Consulta de rotina para {nome} concluída. Alta médica concedida.", "BLUE")
                 self.agent.disponivel = True
