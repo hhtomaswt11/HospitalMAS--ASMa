@@ -1,9 +1,3 @@
-# camada2_coordenacao.py
-# -*- coding: utf-8 -*-
-"""
-Layer 2 — Coordination Motor
-"""
-
 import asyncio
 import json
 
@@ -122,7 +116,8 @@ class CoordenadorConsultas(Agent):
                 acc_m.body = json.dumps({
                     "doente_jid": doente_jid,
                     "nome": nome,
-                    "tipo": patient_data.get("tipo", "Normal")
+                    "tipo": patient_data.get("tipo", "Normal"),
+                    "sala_jid": sala_proposta["sala_jid"]
                 })
                 acc_m.thread = doente_jid
                 await self.send(acc_m)
@@ -355,7 +350,8 @@ class CoordenadorUrgencias(Agent):
                 acc_m.body = json.dumps({
                     "doente_jid": doente_jid,
                     "nome": nome,
-                    "tipo": patient_data.get("tipo", "Urgencia")
+                    "tipo": patient_data.get("tipo", "Urgencia"),
+                    "sala_jid": sala_proposta["sala_jid"]
                 })
                 acc_m.thread = doente_jid
                 await self.send(acc_m)
@@ -467,6 +463,19 @@ class CoordenadorExames(Agent):
                     f"[ALOCAÇÃO] DIAGNÓSTICO AGENDADO: {nome} → "
                     f"Equipamento={equipamento_proposta.get('nome_sala', '?')}",
                     "BOLD")
+
+                # NOTIFICAR SOLICITANTE (Médico)
+                solicitante = patient_data.get("solicitante")
+                if solicitante:
+                    notif = Message(to=solicitante)
+                    notif.set_metadata("performative", "inform")
+                    notif.set_metadata("type", "allocation_confirmed")
+                    notif.body = json.dumps({
+                        "doente_jid": doente_jid,
+                        "sala_jid": equipamento_proposta["sala_jid"],
+                        "procedure": "exam"
+                    })
+                    await self.send(notif)
             else:
                 log(COORD_EXAM,
                     f"[ALLOCATION-FAILED] No diagnostic equipment available for {nome}.",
@@ -588,6 +597,19 @@ class CoordenadorCirurgias(Agent):
                     f"Bloco={bloco_proposta.get('nome_sala', '?')}, "
                     f"Cirurgião={medico_proposta.get('nome_medico', '?')}",
                     "BOLD")
+
+                # NOTIFICAR SOLICITANTE (Médico)
+                solicitante = patient_data.get("solicitante")
+                if solicitante:
+                    notif = Message(to=solicitante)
+                    notif.set_metadata("performative", "inform")
+                    notif.set_metadata("type", "allocation_confirmed")
+                    notif.body = json.dumps({
+                        "doente_jid": doente_jid,
+                        "sala_jid": bloco_proposta["sala_jid"],
+                        "procedure": "surgery"
+                    })
+                    await self.send(notif)
             else:
                 log(COORD_CIR,
                     f"[ALLOCATION-FAILED] No valid surgical resources available for {nome}.", "RED")

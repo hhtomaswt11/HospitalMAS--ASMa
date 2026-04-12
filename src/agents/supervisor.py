@@ -1,7 +1,3 @@
-"""
-Layer 3 — Supervision Motor
-"""
-
 import json
 from datetime import datetime
 
@@ -67,12 +63,39 @@ class Supervisor(Agent):
                 r_jid = data.get("recurso_jid")
                 GLOBAL_DASHBOARD[r_jid] = data
                 
+                # Dynamic registry update (for newly spawned agents)
+                if r_jid not in AGENT_REGISTRY:
+                    AGENT_REGISTRY[r_jid] = {
+                        "name": data.get("nome", r_jid.split("@")[0]),
+                        "role": "patient" if "doente" in r_jid.lower() else "infra",
+                        "type": "Dinâmico"
+                    }
+                
+                # Also register the patient being treated
+                p_jid = data.get("paciente_atual")
+                if p_jid and p_jid not in AGENT_REGISTRY:
+                    AGENT_REGISTRY[p_jid] = {
+                        "name": p_jid.split("@")[0].capitalize(),
+                        "role": "patient",
+                        "type": "Em Atendimento"
+                    }
+
                 estado = "LIVRE" if data["disponivel"] else f"OCUPADO(A) com {data.get('paciente_atual')}"
                 nome_r = data.get("nome", data.get("nome_sala", data.get("nome_medico", "Recurso Desconhecido")))
                 log(SUPERVISOR, f"[DASHBOARD] {nome_r} -> {estado}", "BLUE")
 
             elif performative == "inform" and msg_type == "emergency_alert":
                 data = json.loads(msg.body)
+                p_jid = data.get("doente_jid")
+                
+                # Register emergency patients proactively
+                if p_jid and p_jid not in AGENT_REGISTRY:
+                    AGENT_REGISTRY[p_jid] = {
+                        "name": data.get("name", p_jid.split("@")[0]),
+                        "role": "patient",
+                        "type": "Urgência"
+                    }
+
                 log(SUPERVISOR, f"[ALERTA-EMERGÊNCIA] Recebido alerta prioritário! Doente: {data['nome']} | Prioridade: {data['prioridade']}", "RED")
                 log(SUPERVISOR, "[PREEMPÇÃO] A despoletar protocolo dinâmico de preempção...", "RED")
 

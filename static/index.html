@@ -64,6 +64,7 @@
             font-weight: 700;
             background: linear-gradient(to right, #60a5fa, #a855f7);
             -webkit-background-clip: text;
+            background-clip: text;
             -webkit-text-fill-color: transparent;
         }
 
@@ -264,6 +265,70 @@
         .log-entry {
             margin-bottom: 0.25rem;
             opacity: 0.7;
+            border-left: 2px solid var(--primary);
+            padding-left: 0.5rem;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-10px);
+            }
+
+            to {
+                opacity: 0.7;
+                transform: translateX(0);
+            }
+        }
+
+        /* Interaction Pulse */
+        @keyframes pulse-int {
+            0% {
+                box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+            }
+
+            70% {
+                box-shadow: 0 0 0 10px rgba(59, 130, 246, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+            }
+        }
+
+        .interacting {
+            animation: pulse-int 2s infinite;
+            border-color: var(--primary) !important;
+        }
+
+        .avatar-interacting {
+            position: relative;
+        }
+
+        .avatar-interacting::after {
+            content: '';
+            position: absolute;
+            top: -2px;
+            right: -2px;
+            width: 10px;
+            height: 10px;
+            background: var(--success);
+            border-radius: 50%;
+            border: 2px solid var(--bg-surface);
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.3;
+            }
         }
     </style>
 </head>
@@ -380,11 +445,11 @@
             } catch (e) { console.error(e); }
         }
 
-        function createEntityEntry(jid, info, type) {
+        function createEntityEntry(jid, info, type, isInteracting = false) {
             const isEmergency = info.type === "Urgência" || jid.includes("urgente");
             return `
-                <div class="entity-card" id="card-${jid.split('@')[0]}">
-                    <div class="avatar ${type === 'medic' ? 'avatar-medic' : (isEmergency ? 'avatar-emergency' : 'avatar-patient')}">
+                <div class="entity-card ${isInteracting ? 'interacting' : ''}" id="card-${jid.split('@')[0]}">
+                    <div class="avatar ${type === 'medic' ? 'avatar-medic' : (isEmergency ? 'avatar-emergency' : 'avatar-patient')} ${isInteracting ? 'avatar-interacting' : ''}">
                         ${type === 'medic' ? ICONS.medic : ICONS.patient}
                     </div>
                     <div class="entity-info">
@@ -421,12 +486,13 @@
                     const pInfo = ENTITIES.patients[patientJid] || { name: patientJid.split('@')[0], type: "Externo" };
                     patientHtml = createEntityEntry(patientJid, pInfo, 'patient');
 
-                    // Look for the medic assigned to this patient (strictly filter by role)
                     Object.keys(resources).forEach(mJid => {
-                        if (resources[mJid].paciente_atual === patientJid && ENTITIES.medics[mJid]) {
+                        const mState = resources[mJid];
+                        if (mState.paciente_atual === patientJid && ENTITIES.medics[mJid]) {
                             inRoomMedics.add(mJid);
                             const mInfo = ENTITIES.medics[mJid];
-                            medicHtml = createEntityEntry(mJid, mInfo, 'medic');
+                            const isInteracting = (Date.now() / 1000 - mState.last_activity) < 5;
+                            medicHtml = createEntityEntry(mJid, mInfo, 'medic', isInteracting);
                         }
                     });
                 }

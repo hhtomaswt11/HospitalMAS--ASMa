@@ -1,10 +1,7 @@
-"""
-Layer 1 — Entry & Resource Agents
-Classes: AgenteDoente, AgenteTriagem, AgenteMedico, AgenteSala
-"""
-
 import asyncio
 import json
+import time
+import random
 
 from spade.agent import Agent
 from spade.behaviour import CyclicBehaviour, OneShotBehaviour
@@ -116,6 +113,9 @@ class AgenteMedico(Agent):
         self.nome_medico = nome_medico
         self.disponivel = True
         self.paciente_atual = None
+        self.sala_atual = None
+        self.mcdt_atual = None
+        self.bloco_atual = None
 
     class StartupStatusBehaviour(OneShotBehaviour):
         async def run(self):
@@ -126,7 +126,8 @@ class AgenteMedico(Agent):
                 "recurso_jid": str(self.agent.jid),
                 "nome": self.agent.nome_medico,
                 "disponivel": self.agent.disponivel,
-                "paciente_atual": self.agent.paciente_atual
+                "paciente_atual": self.agent.paciente_atual,
+                "last_activity": time.time()
             })
             await self.send(msg)
 
@@ -152,7 +153,11 @@ class AgenteMedico(Agent):
             if self.agent.paciente_atual != doente_jid:
                 return
             
-            if "Pedro" in nome:
+            # Lógica probabilística para exames e cirurgia baseada na configuração
+            is_urgent = self.patient_data.get("tipo") != "Normal"
+            prob_exam = PROB_EXAM_URGENT if is_urgent else PROB_EXAM_NORMAL
+            
+            if random.random() < prob_exam:
                 log(self.agent.nome_medico, f"[CLÍNICA] Gravidade clínica detetada para {nome}. A solicitar MCDT (Raio-X).", "CYAN")
                 
                 msg_exame = Message(to=jid(COORD_EXAM))
@@ -169,32 +174,62 @@ class AgenteMedico(Agent):
                 log(self.agent.nome_medico, f"[TRANSITO] {nome} encaminhado para diagnóstico. A libertar Consultório para novo uso.", "CYAN")
                 
                 # 1. Libertar sala de consulta IMEDIATAMENTE (o doente já saiu para o exame)
-                msg_free_sala_urg = Message(to=jid(SALA1))
-                msg_free_sala_urg.set_metadata("performative", "inform")
-                msg_free_sala_urg.set_metadata("type", "release")
-                await self.send(msg_free_sala_urg)
+                if self.agent.sala_atual:
+                    msg_free_sala_urg = Message(to=self.agent.sala_atual)
+                    msg_free_sala_urg.set_metadata("performative", "inform")
+                    msg_free_sala_urg.set_metadata("type", "release")
+                    await self.send(msg_free_sala_urg)
 
-                # 2. Aguardar resultados do exame
+                # 2. Aguardar resultados do exame (o Coordenador deve ter alocado o equipamento)
                 await asyncio.sleep(6)
-                log(self.agent.nome_medico, f"[CLÍNICA] Resultados de diagnóstico recebidos para {nome}. A solicitar intervenção cirúrgica urgente.", "MAGENTA")
                 
-                # 3. Libertar equipamento de diagnóstico (MCDT concluído)
-                msg_free_raiox = Message(to=jid(SALA_RAIOX))
-                msg_free_raiox.set_metadata("performative", "inform")
-                msg_free_raiox.set_metadata("type", "release")
-                await self.send(msg_free_raiox)
-                
-                # 4. Solicitar Bloco Operatório
-                msg_cirurgia = Message(to=jid(COORD_CIR))
-                msg_cirurgia.set_metadata("performative", "request")
-                msg_cirurgia.set_metadata("type", "surgery_request")
-                msg_cirurgia.body = json.dumps({
-                    "doente_jid": doente_jid,
-                    "nome": nome,
-                    "tipo": "Surgery",
-                    "solicitante": str(self.agent.jid)
-                })
-                await self.send(msg_cirurgia)
+                if random.random() < PROB_SURGERY_AFTER_EXAM:
+                    log(self.agent.nome_medico, f"[CLÍNICA] Resultados de diagnóstico recebidos para {nome}. A solicitar intervenção cirúrgica urgente.", "MAGENTA")
+                    
+                    # 3. Libertar equipamento de diagnóstico (MCDT concluído)
+                    if self.agent.mcdt_atual:
+                        msg_free_mcdt = Message(to=self.agent.mcdt_atual)
+                        msg_free_mcdt.set_metadata("performative", "inform")
+                        msg_free_mcdt.set_metadata("type", "release")
+                        await self.send(msg_free_mcdt)
+                        log(self.agent.nome_medico, f"[SYNC] Equipamento {self.agent.mcdt_atual} libertado.", "CYAN")
+                        self.agent.mcdt_atual = None
+                    
+                    # 4. Solicitar Bloco Operatório
+                    msg_cirurgia = Message(to=jid(COORD_CIR))
+                    msg_cirurgia.set_metadata("performative", "request")
+                    msg_cirurgia.set_metadata("type", "surgery_request")
+                    msg_cirurgia.body = json.dumps({
+                        "doente_jid": doente_jid,
+                        "nome": nome,
+                        "tipo": "Surgery",
+                        "solicitante": str(self.agent.jid)
+                    })
+                    await self.send(msg_cirurgia)
+                else:
+                    log(self.agent.nome_medico, f"[CLÍNICA] Resultados de diagnóstico para {nome} normais. Alta médica concedida.", "BLUE")
+                    self.agent.disponivel = True
+                    self.agent.paciente_atual = None
+                    
+                    # Libertar equipamento de diagnóstico (MCDT concluído)
+                    if self.agent.mcdt_atual:
+                        msg_free_mcdt = Message(to=self.agent.mcdt_atual)
+                        msg_free_mcdt.set_metadata("performative", "inform")
+                        msg_free_mcdt.set_metadata("type", "release")
+                        await self.send(msg_free_mcdt)
+                        self.agent.mcdt_atual = None
+
+                    # Notificar status final
+                    msg_status = Message(to=jid(SUPERVISOR))
+                    msg_status.set_metadata("performative", "inform")
+                    msg_status.set_metadata("type", "resource_status")
+                    msg_status.body = json.dumps({
+                        "recurso_jid": str(self.agent.jid),
+                        "nome": self.agent.nome_medico,
+                        "disponivel": True,
+                        "paciente_atual": None
+                    })
+                    await self.send(msg_status)
             else:
                 log(self.agent.nome_medico, f"[CLÍNICA] Consulta de rotina para {nome} concluída. Alta médica concedida.", "BLUE")
                 self.agent.disponivel = True
@@ -212,10 +247,12 @@ class AgenteMedico(Agent):
                 await self.send(msg_status)
 
                 # Libertar sala de consulta normal
-                msg_free_sala = Message(to=jid(SALA1))
-                msg_free_sala.set_metadata("performative", "inform")
-                msg_free_sala.set_metadata("type", "release")
-                await self.send(msg_free_sala)
+                if self.agent.sala_atual:
+                    msg_free_sala = Message(to=self.agent.sala_atual)
+                    msg_free_sala.set_metadata("performative", "inform")
+                    msg_free_sala.set_metadata("type", "release")
+                    await self.send(msg_free_sala)
+                    self.agent.sala_atual = None
 
     class ExecuteProcedureBehaviour(OneShotBehaviour):
         def __init__(self, patient_data):
@@ -241,10 +278,13 @@ class AgenteMedico(Agent):
             })
             await self.send(msg_status)
             
-            msg_free_bloco = Message(to=jid(BLOCO_OPERATORIO))
-            msg_free_bloco.set_metadata("performative", "inform")
-            msg_free_bloco.set_metadata("type", "release")
-            await self.send(msg_free_bloco)
+            if self.agent.bloco_atual:
+                msg_free_bloco = Message(to=self.agent.bloco_atual)
+                msg_free_bloco.set_metadata("performative", "inform")
+                msg_free_bloco.set_metadata("type", "release")
+                await self.send(msg_free_bloco)
+                log(self.agent.nome_medico, f"[SYNC] Bloco Operatório {self.agent.bloco_atual} libertado.", "GREEN")
+                self.agent.bloco_atual = None
 
     class HandleProposalsBehaviour(CyclicBehaviour):
         async def notificar_status(self):
@@ -255,7 +295,8 @@ class AgenteMedico(Agent):
                 "recurso_jid": str(self.agent.jid),
                 "nome": self.agent.nome_medico,
                 "disponivel": self.agent.disponivel,
-                "paciente_atual": self.agent.paciente_atual
+                "paciente_atual": self.agent.paciente_atual,
+                "last_activity": time.time()
             })
             await self.send(msg)
 
@@ -293,6 +334,7 @@ class AgenteMedico(Agent):
                 data = json.loads(msg.body)
                 agent.disponivel = False
                 agent.paciente_atual = data.get("doente_jid")
+                agent.sala_atual = data.get("sala_jid")
                 
                 sender = str(msg.sender).split("@")[0]
                 
@@ -307,6 +349,15 @@ class AgenteMedico(Agent):
                 else:
                     log(agent.nome_medico, f"[ALLOCATION] Generic allocation accepted.", "BLUE")
                     await self.notificar_status()
+
+            elif performative == "inform" and msg.get_metadata("type") == "allocation_confirmed":
+                data = json.loads(msg.body)
+                if data["procedure"] == "exam":
+                    agent.mcdt_atual = data["sala_jid"]
+                    log(agent.nome_medico, f"[SYNC] Confirmation: Equipment {data['sala_jid']} locked for exam.", "CYAN")
+                elif data["procedure"] == "surgery":
+                    agent.bloco_atual = data["sala_jid"]
+                    log(agent.nome_medico, f"[SYNC] Confirmation: Block {data['sala_jid']} locked for surgery.", "MAGENTA")
 
             elif performative == "cancel":
                 prev = agent.paciente_atual
@@ -349,7 +400,8 @@ class AgenteSala(Agent):
                 "recurso_jid": str(self.agent.jid),
                 "nome": self.agent.nome_sala,
                 "disponivel": self.agent.disponivel,
-                "paciente_atual": self.agent.paciente_atual
+                "paciente_atual": self.agent.paciente_atual,
+                "last_activity": time.time()
             })
             await self.send(msg)
 
@@ -362,7 +414,8 @@ class AgenteSala(Agent):
                 "recurso_jid": str(self.agent.jid),
                 "nome": self.agent.nome_sala,
                 "disponivel": self.agent.disponivel,
-                "paciente_atual": self.agent.paciente_atual
+                "paciente_atual": self.agent.paciente_atual,
+                "last_activity": time.time()
             })
             await self.send(msg)
 
