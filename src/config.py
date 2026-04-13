@@ -36,7 +36,7 @@ BLOCO_OPERATORIO2 = "bloco_operatorio2"
 
 # Valores da Simulação
 SIMULATION_DURATION = 300  # segundos
-ARRIVAL_RATE_NORMAL = 0.5  # pacientes por segundo (média de 1 a cada 2s)
+ARRIVAL_RATE_NORMAL = 0.2  # pacientes por segundo (média de 1 a cada 2s)
 ARRIVAL_RATE_URGENT = 0.05 # pacientes por segundo (média de 1 a cada 20s)
 
 # Probabilidades de Fluxo Clínico

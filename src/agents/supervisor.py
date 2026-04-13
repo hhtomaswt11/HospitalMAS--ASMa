@@ -8,6 +8,10 @@ from spade.message import Message
 from src.config import *
 
 GLOBAL_DASHBOARD = {}
+GLOBAL_WAITLIST = {
+    "routine": [],
+    "emergency": [],
+}
 RECENT_LOGS = []
 
 def dump_state():
@@ -15,6 +19,7 @@ def dump_state():
         with open("data/dashboard.json", "w", encoding="utf-8") as f:
             json.dump({
                 "resources": GLOBAL_DASHBOARD,
+                "waitlist": GLOBAL_WAITLIST,
                 "logs": RECENT_LOGS,
                 "registry": AGENT_REGISTRY
             }, f, ensure_ascii=False)
@@ -83,6 +88,16 @@ class Supervisor(Agent):
                 estado = "LIVRE" if data["disponivel"] else f"OCUPADO(A) com {data.get('paciente_atual')}"
                 nome_r = data.get("nome", data.get("nome_sala", data.get("nome_medico", "Recurso Desconhecido")))
                 log(SUPERVISOR, f"[DASHBOARD] {nome_r} -> {estado}", "BLUE")
+
+            elif performative == "inform" and msg_type == "waitlist_update":
+                data = json.loads(msg.body)
+                queue_name = data.get("queue")
+                patients = data.get("patients", [])
+                if queue_name in GLOBAL_WAITLIST:
+                    GLOBAL_WAITLIST[queue_name] = patients
+                    log(SUPERVISOR,
+                        f"[SALA-ESPERA] Fila '{queue_name}' atualizada ({len(patients)} doentes).",
+                        "YELLOW")
 
             elif performative == "inform" and msg_type == "emergency_alert":
                 data = json.loads(msg.body)

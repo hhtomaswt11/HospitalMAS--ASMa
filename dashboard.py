@@ -29,6 +29,7 @@ async def get_state():
     # Fallback se o JSON ainda não existir
     return {
         "resources": {},
+        "waitlist": {"routine": [], "emergency": []},
         "logs": []
     }
 

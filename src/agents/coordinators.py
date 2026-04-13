@@ -20,13 +20,37 @@ class CoordenadorConsultas(Agent):
         super().__init__(agent_jid, password, **kwargs)
         self.alocacoes = {}         # doente_jid → {medico, sala, nome}
         self.pending_requests = []  # fila de pedidos pendentes
+        self.routine_hold = False   # bloqueia rotina quando há urgências em espera
+
+    def get_routine_waitlist(self):
+        return [
+            {
+                "doente_jid": p.get("doente_jid"),
+                "nome": p.get("nome", "?"),
+                "tipo": p.get("tipo", "Normal"),
+                "prioridade": p.get("prioridade", 0),
+            }
+            for p in self.pending_requests
+        ]
 
     class CoordinatorBehaviour(CyclicBehaviour):
+
+        async def publish_waitlist(self):
+            msg = Message(to=jid(SUPERVISOR))
+            msg.set_metadata("performative", "inform")
+            msg.set_metadata("type", "waitlist_update")
+            msg.body = json.dumps({
+                "queue": "routine",
+                "patients": self.agent.get_routine_waitlist(),
+            })
+            await self.send(msg)
 
 
         async def run(self):
             msg = await self.receive(timeout=5)
             if msg is None:
+                if self.agent.pending_requests:
+                    await self.dispatch_next_routine()
                 return
 
             performative = msg.get_metadata("performative")
@@ -38,12 +62,81 @@ class CoordenadorConsultas(Agent):
                 log(COORD_CONS,
                     f"[PEDIDO] Pedido de consulta de rotina recebido: {data['nome']}",
                     "GREEN")
-                await self.run_contract_net(data)
+                self.agent.pending_requests.append(data)
+                await self.publish_waitlist()
+                log(COORD_CONS,
+                    f"[FILA] Doente {data['nome']} adicionado à fila de rotina "
+                    f"(posição={len(self.agent.pending_requests)}).",
+                    "YELLOW")
+                await self.dispatch_next_routine()
 
             # ---- Ordem de preemption do Supervisor ----
             elif performative == "request" and msg_type == "preemption_order":
                 data = json.loads(msg.body)
                 await self.handle_preemption(data)
+                await self.dispatch_next_routine()
+
+            elif performative == "inform" and msg_type == "routine_gate":
+                data = json.loads(msg.body)
+                self.agent.routine_hold = bool(data.get("hold", False))
+                estado = "BLOQUEADA" if self.agent.routine_hold else "ATIVA"
+                log(COORD_CONS, f"[PRIORIDADE] Via de rotina agora: {estado}", "YELLOW")
+                if not self.agent.routine_hold:
+                    await self.dispatch_next_routine()
+
+        async def handle_out_of_band_message(self, msg):
+            """Processa mensagens que chegam durante a negociação e não pertencem ao thread atual."""
+            performative = msg.get_metadata("performative")
+            msg_type = msg.get_metadata("type")
+
+            if performative == "request" and msg_type == "patient_request":
+                data = json.loads(msg.body)
+                self.agent.pending_requests.append(data)
+                await self.publish_waitlist()
+                log(COORD_CONS,
+                    f"[FILA] Doente {data.get('nome', '?')} adicionado à fila de rotina "
+                    f"(posição={len(self.agent.pending_requests)}).",
+                    "YELLOW")
+                return
+
+            if performative == "request" and msg_type == "preemption_order":
+                data = json.loads(msg.body)
+                # Bloquear rotina imediatamente para impedir adjudicações indevidas.
+                self.agent.routine_hold = True
+                await self.handle_preemption(data)
+                return
+
+            if performative == "inform" and msg_type == "routine_gate":
+                data = json.loads(msg.body)
+                self.agent.routine_hold = bool(data.get("hold", False))
+                estado = "BLOQUEADA" if self.agent.routine_hold else "ATIVA"
+                log(COORD_CONS, f"[PRIORIDADE] Via de rotina agora: {estado}", "YELLOW")
+                return
+
+        async def dispatch_next_routine(self):
+            """Despacha apenas o primeiro doente da fila de rotina (FCFS estrito)."""
+            if self.agent.routine_hold:
+                log(COORD_CONS,
+                    "[PRIORIDADE] Rotina temporariamente bloqueada: urgências em espera.",
+                    "RED")
+                return
+
+            if not self.agent.pending_requests:
+                return
+
+            patient = self.agent.pending_requests[0]
+            log(COORD_CONS,
+                f"[FCFS] A tentar alocar cabeça da fila: {patient.get('nome', '?')}",
+                "YELLOW")
+            allocated = await self.run_contract_net(patient)
+
+            if allocated:
+                self.agent.pending_requests.pop(0)
+                await self.publish_waitlist()
+            else:
+                log(COORD_CONS,
+                    f"[FCFS] Cabeça da fila mantém-se em espera: {patient.get('nome', '?')}",
+                    "YELLOW")
 
         # -----------------------------------------------------------------
         # CONTRACT-NET: CFP → Recolher propostas → Adjudicar
@@ -53,6 +146,12 @@ class CoordenadorConsultas(Agent):
             agent = self.agent
             nome = patient_data["nome"]
             doente_jid = patient_data["doente_jid"]
+
+            if self.agent.routine_hold:
+                log(COORD_CONS,
+                    f"[PRIORIDADE] Alocação de rotina suspensa para {nome} (urgência em espera).",
+                    "RED")
+                return False
 
             log(COORD_CONS,
                 f"[CONTRACT-NET] A iniciar negociação para {nome}...", "GREEN")
@@ -89,6 +188,10 @@ class CoordenadorConsultas(Agent):
                 if reply is None:
                     continue
 
+                if reply.thread != doente_jid:
+                    await self.handle_out_of_band_message(reply)
+                    continue
+
                 perf = reply.get_metadata("performative")
                 body = json.loads(reply.body)
 
@@ -107,6 +210,12 @@ class CoordenadorConsultas(Agent):
                     log(COORD_CONS,
                         f"[PROPOSTA] Proposta rejeitada: {body.get('motivo', '?')}",
                         "YELLOW")
+
+            if self.agent.routine_hold:
+                log(COORD_CONS,
+                    f"[PRIORIDADE] Adjudicação de rotina cancelada para {nome} (urgência ativa).",
+                    "RED")
+                return False
 
             # 4) Adjudicar ou recusar
             if medico_proposta and sala_proposta:
@@ -144,11 +253,12 @@ class CoordenadorConsultas(Agent):
                     f"[ALOCAÇÃO] Consulta de Rotina AGENDADA: {nome} → "
                     f"Médico={medico_proposta['nome_medico']}, "
                     f"Sala={sala_proposta['nome_sala']}", "BOLD")
+                return True
             else:
                 log(COORD_CONS,
                     f"[ALOCAÇÃO-FALHOU] Impossível agendar consulta de rotina a {nome} "
                     f"(recursos indisponíveis). Pedido pendente.", "RED")
-                agent.pending_requests.append(patient_data)
+                return False
 
         # -----------------------------------------------------------------
         # PREEMPTION: Cancelar alocação normal para libertar recursos
@@ -198,12 +308,13 @@ class CoordenadorConsultas(Agent):
                     f"será reagendado.", "YELLOW")
 
                 # Colocar o doente cancelado na fila de pendentes
-                agent.pending_requests.append({
+                agent.pending_requests.insert(0, {
                     "doente_jid": doente_cancelar,
                     "nome": aloc["nome"],
                     "tipo": "Normal",
                     "prioridade": 0,
                 })
+                await self.publish_waitlist()
 
                 # Aguardar confirmações de cancelamento
                 await asyncio.sleep(2)
@@ -247,7 +358,46 @@ class CoordenadorUrgencias(Agent):
         super().__init__(agent_jid, password, **kwargs)
         self.pending_urgencies = []
 
+    def get_emergency_waitlist(self):
+        return [
+            {
+                "doente_jid": p.get("doente_jid"),
+                "nome": p.get("nome", "?"),
+                "tipo": p.get("tipo", "Urgencia"),
+                "prioridade": p.get("prioridade", 9),
+            }
+            for p in self.pending_urgencies
+        ]
+
     class EmergencyCoordinatorBehaviour(CyclicBehaviour):
+
+        async def publish_waitlist(self):
+            msg = Message(to=jid(SUPERVISOR))
+            msg.set_metadata("performative", "inform")
+            msg.set_metadata("type", "waitlist_update")
+            msg.body = json.dumps({
+                "queue": "emergency",
+                "patients": self.agent.get_emergency_waitlist(),
+            })
+            await self.send(msg)
+
+            gate = Message(to=jid(COORD_CONS))
+            gate.set_metadata("performative", "inform")
+            gate.set_metadata("type", "routine_gate")
+            gate.body = json.dumps({
+                "hold": len(self.agent.pending_urgencies) > 0
+            })
+            await self.send(gate)
+
+        async def dispatch_next_emergency(self):
+            if not self.agent.pending_urgencies:
+                return
+
+            patient = self.agent.pending_urgencies[0]
+            allocated = await self.run_emergency_contract_net(patient)
+            if allocated:
+                self.agent.pending_urgencies.pop(0)
+                await self.publish_waitlist()
 
 
         async def run(self):
@@ -265,6 +415,7 @@ class CoordenadorUrgencias(Agent):
                     f"[PEDIDO] Pedido triado de emergência recebido: {data['nome']} "
                     f"(prioridade={data['prioridade']})", "RED")
                 self.agent.pending_urgencies.append(data)
+                await self.publish_waitlist()
                 log(COORD_URG,
                     "[A AGUARDAR] A aguardar confirmação de libertação de recursos do Supervisor...",
                     "YELLOW")
@@ -275,8 +426,7 @@ class CoordenadorUrgencias(Agent):
                     "[NOTIFICAÇÃO] Confirmação de preempção recebida do Supervisor.",
                     "GREEN")
                 if self.agent.pending_urgencies:
-                    patient = self.agent.pending_urgencies.pop(0)
-                    await self.run_emergency_contract_net(patient)
+                    await self.dispatch_next_emergency()
 
         # -----------------------------------------------------------------
         # CONTRACT-NET DE EMERGÊNCIA
@@ -370,10 +520,12 @@ class CoordenadorUrgencias(Agent):
                     f"[ALOCAÇÃO] EMERGÊNCIA AGENDADA: {nome} → "
                     f"Médico={medico_proposta['nome_medico']}, "
                     f"Sala={sala_proposta['nome_sala']}", "BOLD")
+                return True
             else:
                 log(COORD_URG,
                     f"[FALHA CRÍTICA] Impossível alocar recursos de emergência para {nome}! "
                     f"Recursos continuam indisponíveis.", "RED")
+                return False
 
     async def setup(self):
         log(COORD_URG, "Coordenador de Urgências iniciado.", "RED")

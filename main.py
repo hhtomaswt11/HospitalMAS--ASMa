@@ -1,15 +1,3 @@
-# teste_simulacao.py
-# -*- coding: utf-8 -*-
-"""
-Ficheiro principal de execução — Teste de Simulação.
-
-Instancia todos os agentes do Sistema Multiagente Hospitalar (Pediatria)
-e executa um cenário cronológico de 3 fases que demonstra:
-  Fase 1: Consulta normal agendada com sucesso
-  Fase 2: Segundo doente sem recursos disponíveis
-  Fase 3: Urgência → Triagem → Preemption → Reescalonamento
-"""
-
 import asyncio
 import subprocess
 
@@ -20,6 +8,11 @@ from src.agents.coordinators import (
     CoordenadorExames, CoordenadorCirurgias,
 )
 from src.agents.supervisor import Supervisor
+
+
+PATIENT_N1_ID = "doente_n1"
+PATIENT_N2_ID = "doente_n2"
+PATIENT_U1_ID = "doente_u1"
 
 
 async def main():
@@ -64,8 +57,8 @@ async def main():
 
     # Bloco Operatório
     bloco_op = AgenteSala(
-        jid(BLOCO_OPERATORIO), PASSWORD,
-        nome_sala=AGENT_REGISTRY[jid(BLOCO_OPERATORIO)]["name"]
+        jid(BLOCO_OPERATORIO1), PASSWORD,
+        nome_sala=AGENT_REGISTRY[jid(BLOCO_OPERATORIO1)]["name"]
     )
     await bloco_op.start(auto_register=True)
 
@@ -107,8 +100,8 @@ async def main():
     print("-" * 70 + "\n")
 
     doente_n1 = AgenteDoente(
-        jid(DOENTE_N1), PASSWORD,
-        nome_doente=AGENT_REGISTRY[jid(DOENTE_N1)]["name"],
+        jid(PATIENT_N1_ID), PASSWORD,
+        nome_doente="Joao Nunes",
         tipo_entrada="Normal",
         sintomas="Febre ligeira, tosse",
         prioridade=2,
@@ -126,8 +119,8 @@ async def main():
     print("-" * 70 + "\n")
 
     doente_n2 = AgenteDoente(
-        jid(DOENTE_N2), PASSWORD,
-        nome_doente=AGENT_REGISTRY[jid(DOENTE_N2)]["name"],
+        jid(PATIENT_N2_ID), PASSWORD,
+        nome_doente="Maria Costa",
         tipo_entrada="Normal",
         sintomas="Dor de ouvido",
         prioridade=1,
@@ -145,8 +138,8 @@ async def main():
     print("-" * 70 + "\n")
 
     doente_u1 = AgenteDoente(
-        jid(DOENTE_U1), PASSWORD,
-        nome_doente=AGENT_REGISTRY[jid(DOENTE_U1)]["name"],
+        jid(PATIENT_U1_ID), PASSWORD,
+        nome_doente="Pedro Alves",
         tipo_entrada="Urgencia",
         sintomas="Dificuldade respiratória aguda, cianose",
         prioridade=0,  # Prioridade será atualizada pela Triagem
