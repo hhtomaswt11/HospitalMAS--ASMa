@@ -145,6 +145,17 @@ class Supervisor(Agent):
                 else:
                     log(SUPERVISOR, "[PREEMPÇÃO-AVISO] Sem alocações de rotina para cancelar. Fila de espera mandatória.", "YELLOW")
 
+                    # Mesmo sem preempção efetiva, os recursos já podem estar livres.
+                    # Notificamos o coordenador de urgências para evitar deadlock.
+                    freed = Message(to=jid(COORD_URG))
+                    freed.set_metadata("performative", "inform")
+                    freed.set_metadata("type", "resources_freed")
+                    freed.body = json.dumps({
+                        "status": "resources_available",
+                    })
+                    await self.send(freed)
+                    log(SUPERVISOR, "[PREEMPÇÃO-AVISO] Coordenador de urgências notificado para avançar com a fila.", "YELLOW")
+
     async def setup(self):
         log(SUPERVISOR, "Supervisor initialized.", "BOLD")
         self.add_behaviour(self.MonitorBehaviour())

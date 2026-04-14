@@ -4,8 +4,8 @@ import subprocess
 import time
 
 from src.config import *
-from src.agents.resources import AgenteDoente, AgenteTriagem, AgenteMedico, AgenteSala
-from src.agents.coordinators import (
+from src.agents.Resources import AgenteDoente, AgenteTriagem, AgenteMedico, AgenteSala
+from src.agents.Coordinators import (
     CoordenadorConsultas, CoordenadorUrgencias,
     CoordenadorExames, CoordenadorCirurgias,
 )

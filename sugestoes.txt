@@ -1,0 +1,3 @@
+adicionar especialidades aos agentes (ex: cardiologia, ortopedia, etc. e apenas permitir que trabalhem numa zona especifica)
+adicionar mais salas de exames/operações
+adicionar uma área de internamento
