@@ -8,37 +8,32 @@ from src.agents.Resources import AgenteDoente, AgenteTriagem, AgenteMedico, Agen
 from src.agents.Coordinators import (
     CoordenadorConsultas, CoordenadorUrgencias,
     CoordenadorExames, CoordenadorCirurgias,
+    CoordenadorTriagem, CoordenadorInternamento,
 )
 from src.agents.supervisor import Supervisor
 
-# Mock data 
 PATIENT_NAMES = [
     "Alice", "Bernardo", "Carla", "Duarte", "Elena", "Filipe", "Guilherme", "Helena",
     "Inês", "João", "Katia", "Luís", "Marta", "Nuno", "Olívia", "Pedro", "Quitéria",
     "Ricardo", "Sofia", "Tiago", "Ulisses", "Vera", "Walter", "Xavier", "Yara", "Zulmira"
 ]
 
-SYMPTOMS_ROUTINE = ["Tosse ligeira", "Febre baixa", "Vómitos", "Dor de garganta", "Borbulhas na pele"]
-SYMPTOMS_URGENT = ["Dificuldade respiratória", "Cianose", "Traumatismo craniano", "Hemorragia", "Convulsão"]
-
 async def spawn_patient(type_entry):
     name = random.choice(PATIENT_NAMES) + f"_{random.randint(100, 999)}"
     jid_str = jid(name.lower().replace(" ", "_"))
     
     if type_entry == "Normal":
-        symptoms = random.choice(SYMPTOMS_ROUTINE)
-        priority = random.randint(1, 3)
-        color = "GREEN"
+        specialty = random.choice(ROUTINE_SPECIALTIES)
+        priority = None
     else:
-        symptoms = random.choice(SYMPTOMS_URGENT)
-        priority = 0 # Vai ser avaliado na triagem
-        color = "RED"
+        specialty = None
+        priority = None
 
     patient = AgenteDoente(
         jid_str, PASSWORD,
         nome_doente=name,
         tipo_entrada=type_entry,
-        sintomas=symptoms,
+        especialidade=specialty,
         prioridade=priority
     )
     await patient.start(auto_register=True)
@@ -75,12 +70,21 @@ async def main():
     coord_urg = CoordenadorUrgencias(jid(COORD_URG), PASSWORD)
     coord_exam = CoordenadorExames(jid(COORD_EXAM), PASSWORD)
     coord_cir = CoordenadorCirurgias(jid(COORD_CIR), PASSWORD)
+    coord_tri = CoordenadorTriagem(jid(COORD_TRI), PASSWORD)
+    coord_int = CoordenadorInternamento(jid(COORD_INT), PASSWORD)
     
     # Infraestrutura
-    triagem = AgenteTriagem(jid(TRIAGEM), PASSWORD)
     supervisor = Supervisor(jid(SUPERVISOR), PASSWORD)
     
-    infrastructure = [coord_cons, coord_urg, coord_exam, coord_cir, triagem, supervisor]
+    infrastructure = [
+        coord_cons,
+        coord_urg,
+        coord_exam,
+        coord_cir,
+        coord_tri,
+        coord_int,
+        supervisor,
+    ]
     for a in infrastructure:
         await a.start(auto_register=True)
         agents.append(a)
@@ -89,6 +93,8 @@ async def main():
     for agent_jid, info in AGENT_REGISTRY.items():
         if info["role"] == "medic":
             a = AgenteMedico(agent_jid, PASSWORD, nome_medico=info["name"])
+        elif info["role"] == "triage_medic":
+            a = AgenteTriagem(agent_jid, PASSWORD, nome_medico=info["name"])
         elif info["role"] == "room":
             a = AgenteSala(agent_jid, PASSWORD, nome_sala=info["name"])
         else:

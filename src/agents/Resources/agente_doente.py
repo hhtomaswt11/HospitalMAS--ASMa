@@ -11,12 +11,13 @@ class AgenteDoente(Agent):
     Represents a patient emitting a clinical request.
     """
     def __init__(self, agent_jid, password, nome_doente, tipo_entrada="Normal",
-                 sintomas="", prioridade=0, **kwargs):
+                 especialidade=None, prioridade=0, sintomas="", **kwargs):
         super().__init__(agent_jid, password, **kwargs)
         self.nome_doente = nome_doente
         self.tipo_entrada = tipo_entrada
-        self.sintomas = sintomas
+        self.especialidade = especialidade
         self.prioridade = prioridade
+        self.sintomas = sintomas
 
     class SendRequestBehaviour(OneShotBehaviour):
         async def run(self):
@@ -25,16 +26,21 @@ class AgenteDoente(Agent):
                 "doente_jid": str(agent.jid),
                 "nome": agent.nome_doente,
                 "tipo": agent.tipo_entrada,
-                "sintomas": agent.sintomas,
+                "especialidade": agent.especialidade,
                 "prioridade": agent.prioridade,
+                "sintomas": agent.sintomas,
             })
 
             if agent.tipo_entrada == "Normal":
                 dest = jid(COORD_CONS)
-                log(agent.nome_doente, f"[PEDIDO] A emitir pedido de consulta de ROTINA para {COORD_CONS}", "GREEN")
+                log(
+                    agent.nome_doente,
+                    f"[PEDIDO] Consulta de ROTINA para {COORD_CONS} (esp={agent.especialidade})",
+                    "GREEN",
+                )
             else:
-                dest = jid(TRIAGEM)
-                log(agent.nome_doente, f"[PEDIDO] A emitir pedido de EMERGÊNCIA para {TRIAGEM} (sintomas: {agent.sintomas})", "RED")
+                dest = jid(COORD_TRI)
+                log(agent.nome_doente, f"[PEDIDO] EMERGENCIA enviada para {COORD_TRI}", "RED")
 
             msg = Message(to=dest)
             msg.body = body

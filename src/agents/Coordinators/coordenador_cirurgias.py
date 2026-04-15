@@ -32,6 +32,11 @@ class CoordenadorCirurgias(Agent):
             """Contract-Net com blocos operatórios e médicos."""
             nome       = patient_data.get("nome", "?")
             doente_jid = patient_data.get("doente_jid", "")
+            medicos_cirurgia = [
+                m_jid
+                for m_jid in MEDICOS
+                if AGENT_REGISTRY.get(m_jid, {}).get("specialty") == SPECIALTY_CIRURGIA
+            ]
 
             log(COORD_CIR,
                 f"[CONTRACT-NET] A iniciar negociação CIRÚRGICA para {nome}...",
@@ -47,8 +52,8 @@ class CoordenadorCirurgias(Agent):
                 await self.send(cfp)
                 log(COORD_CIR, f"[CFP] CFP enviado para bloco operatório {b_jid}", "MAGENTA")
 
-            # 2) CFP a todos os médicos (cirurgião)
-            for m_jid in MEDICOS:
+            # 2) CFP apenas a médicos cirurgiões
+            for m_jid in medicos_cirurgia:
                 cfp = Message(to=m_jid)
                 cfp.body = json.dumps(patient_data)
                 cfp.set_metadata("performative", "cfp")
@@ -63,11 +68,14 @@ class CoordenadorCirurgias(Agent):
 
             bloco_proposta  = None
             medico_proposta = None
-            expected_replies = len(BLOCOS) + len(MEDICOS)
+            expected_replies = len(BLOCOS) + len(medicos_cirurgia)
 
             for _ in range(expected_replies):
                 reply = await self.receive(timeout=3)
                 if reply is None:
+                    continue
+
+                if reply.thread != doente_jid:
                     continue
 
                 perf = reply.get_metadata("performative")
@@ -105,6 +113,7 @@ class CoordenadorCirurgias(Agent):
                 acc_m.body = json.dumps({
                     "doente_jid": doente_jid,
                     "nome": nome,
+                    "sala_jid": bloco_proposta["sala_jid"],
                 })
                 acc_m.thread = doente_jid
                 await self.send(acc_m)

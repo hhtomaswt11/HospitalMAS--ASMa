@@ -23,6 +23,29 @@ class AgenteMedico(Agent):
         self.mcdt_atual = None
         self.bloco_atual = None
 
+    def get_profile(self):
+        return AGENT_REGISTRY.get(str(self.jid), {})
+
+    def can_handle_cfp(self, cfp_type, patient_data):
+        profile = self.get_profile()
+        zone = profile.get("zone")
+        specialty = profile.get("specialty")
+        requested_specialty = patient_data.get("especialidade")
+
+        if cfp_type in {"consultation_cfp", "emergency_cfp"}:
+            return zone == "normal" and specialty == requested_specialty
+
+        if cfp_type == "surgery_cfp":
+            return zone == "surgical" and specialty == SPECIALTY_CIRURGIA
+
+        if cfp_type == "exam_cfp":
+            return zone == "exam" and specialty == requested_specialty
+
+        return False
+
+    def choose_exam_specialty(self):
+        return random.choice([SPECIALTY_RX, SPECIALTY_TAC, SPECIALTY_ANALISES])
+
     class StartupStatusBehaviour(OneShotBehaviour):
         async def run(self):
             msg = Message(to=jid(SUPERVISOR))
@@ -64,7 +87,12 @@ class AgenteMedico(Agent):
             prob_exam = PROB_EXAM_URGENT if is_urgent else PROB_EXAM_NORMAL
             
             if random.random() < prob_exam:
-                log(self.agent.nome_medico, f"[CLÍNICA] Gravidade clínica detetada para {nome}. A solicitar MCDT (Raio-X).", "CYAN")
+                exam_specialty = self.agent.choose_exam_specialty()
+                log(
+                    self.agent.nome_medico,
+                    f"[CLÍNICA] Gravidade clínica detetada para {nome}. A solicitar MCDT ({exam_specialty}).",
+                    "CYAN",
+                )
                 
                 msg_exame = Message(to=jid(COORD_EXAM))
                 msg_exame.set_metadata("performative", "request")
@@ -72,7 +100,8 @@ class AgenteMedico(Agent):
                 msg_exame.body = json.dumps({
                     "doente_jid": doente_jid,
                     "nome": nome,
-                    "tipo": "Radiography",
+                    "tipo": "Exam",
+                    "especialidade": exam_specialty,
                     "solicitante": str(self.agent.jid)
                 })
                 await self.send(msg_exame)
@@ -85,6 +114,7 @@ class AgenteMedico(Agent):
                     msg_free_sala_urg.set_metadata("performative", "inform")
                     msg_free_sala_urg.set_metadata("type", "release")
                     await self.send(msg_free_sala_urg)
+                    self.agent.sala_atual = None
 
                 # 2. Aguardar resultados do exame (o Coordenador deve ter alocado o equipamento)
                 await asyncio.sleep(6)
@@ -112,6 +142,20 @@ class AgenteMedico(Agent):
                         "solicitante": str(self.agent.jid)
                     })
                     await self.send(msg_cirurgia)
+
+                    # Handoff para cirurgia: este médico deixa de estar associado ao doente.
+                    self.agent.disponivel = True
+                    self.agent.paciente_atual = None
+                    msg_status = Message(to=jid(SUPERVISOR))
+                    msg_status.set_metadata("performative", "inform")
+                    msg_status.set_metadata("type", "resource_status")
+                    msg_status.body = json.dumps({
+                        "recurso_jid": str(self.agent.jid),
+                        "nome": self.agent.nome_medico,
+                        "disponivel": True,
+                        "paciente_atual": None
+                    })
+                    await self.send(msg_status)
                 else:
                     log(self.agent.nome_medico, f"[CLÍNICA] Resultados de diagnóstico para {nome} normais. Alta médica concedida.", "BLUE")
                     self.agent.disponivel = True
@@ -140,6 +184,18 @@ class AgenteMedico(Agent):
                 log(self.agent.nome_medico, f"[CLÍNICA] Consulta de rotina para {nome} concluída. Alta médica concedida.", "BLUE")
                 self.agent.disponivel = True
                 self.agent.paciente_atual = None
+
+                if self.patient_data.get("tipo") == "Urgencia" and random.random() < PROB_INTERNAMENTO_URGENT:
+                    msg_int = Message(to=jid(COORD_INT))
+                    msg_int.set_metadata("performative", "request")
+                    msg_int.set_metadata("type", "internment_request")
+                    msg_int.body = json.dumps({
+                        "doente_jid": doente_jid,
+                        "nome": nome,
+                        "solicitante": str(self.agent.jid),
+                    })
+                    await self.send(msg_int)
+                    log(self.agent.nome_medico, f"[CLINICA] {nome} encaminhado para internamento.", "YELLOW")
                 
                 msg_status = Message(to=jid(SUPERVISOR))
                 msg_status.set_metadata("performative", "inform")
@@ -192,6 +248,78 @@ class AgenteMedico(Agent):
                 log(self.agent.nome_medico, f"[SYNC] Bloco Operatório {self.agent.bloco_atual} libertado.", "GREEN")
                 self.agent.bloco_atual = None
 
+            msg_int = Message(to=jid(COORD_INT))
+            msg_int.set_metadata("performative", "request")
+            msg_int.set_metadata("type", "internment_request")
+            msg_int.body = json.dumps({
+                "doente_jid": self.patient_data.get("doente_jid"),
+                "nome": nome,
+                "solicitante": str(self.agent.jid),
+            })
+            await self.send(msg_int)
+            log(self.agent.nome_medico, f"[CIRURGIA] Pedido de internamento emitido para {nome}.", "YELLOW")
+
+    class ExecuteExamBehaviour(OneShotBehaviour):
+        def __init__(self, patient_data):
+            super().__init__()
+            self.patient_data = patient_data
+
+        async def run(self):
+            nome = self.patient_data.get("nome", "?")
+            sala_jid = self.patient_data.get("sala_jid")
+
+            await asyncio.sleep(5)
+            log(self.agent.nome_medico, f"[EXAME] Exame concluido para {nome}.", "CYAN")
+
+            self.agent.disponivel = True
+            self.agent.paciente_atual = None
+
+            msg_status = Message(to=jid(SUPERVISOR))
+            msg_status.set_metadata("performative", "inform")
+            msg_status.set_metadata("type", "resource_status")
+            msg_status.body = json.dumps({
+                "recurso_jid": str(self.agent.jid),
+                "nome": self.agent.nome_medico,
+                "disponivel": True,
+                "paciente_atual": None,
+            })
+            await self.send(msg_status)
+
+            if sala_jid:
+                msg_free = Message(to=sala_jid)
+                msg_free.set_metadata("performative", "inform")
+                msg_free.set_metadata("type", "release")
+                await self.send(msg_free)
+
+    class ManageInternmentBehaviour(OneShotBehaviour):
+        def __init__(self, data):
+            super().__init__()
+            self.data = data
+
+        async def run(self):
+            sala_jid = self.data.get("sala_jid")
+            nome = self.data.get("nome", "?")
+            duration = int(self.data.get("duration", INTERNAMENTO_MIN_SECONDS))
+
+            log(self.agent.nome_medico, f"[INTERNAMENTO] {nome} internado por {duration}s em {sala_jid}.", "YELLOW")
+            await asyncio.sleep(duration)
+
+            if sala_jid:
+                msg_release = Message(to=sala_jid)
+                msg_release.set_metadata("performative", "inform")
+                msg_release.set_metadata("type", "release")
+                await self.send(msg_release)
+
+            done = Message(to=jid(COORD_INT))
+            done.set_metadata("performative", "inform")
+            done.set_metadata("type", "internment_finished")
+            done.body = json.dumps({
+                "doente_jid": self.data.get("doente_jid"),
+                "nome": nome,
+            })
+            await self.send(done)
+            log(self.agent.nome_medico, f"[INTERNAMENTO] Alta automatica concluida para {nome}.", "GREEN")
+
     class HandleProposalsBehaviour(CyclicBehaviour):
         async def notificar_status(self):
             msg = Message(to=jid(SUPERVISOR))
@@ -216,10 +344,11 @@ class AgenteMedico(Agent):
 
             if performative == "cfp":
                 data = json.loads(msg.body)
+                cfp_type = msg.get_metadata("type")
                 log(agent.nome_medico, f"[CFP] Call for Proposal received for patient {data.get('nome', '?')}", "CYAN")
 
                 reply = msg.make_reply()
-                if agent.disponivel or (agent.paciente_atual == data.get("doente_jid")):
+                if (agent.disponivel or (agent.paciente_atual == data.get("doente_jid"))) and agent.can_handle_cfp(cfp_type, data):
                     reply.set_metadata("performative", "propose")
                     reply.body = json.dumps({
                         "medico_jid": str(agent.jid),
@@ -231,7 +360,7 @@ class AgenteMedico(Agent):
                     reply.set_metadata("performative", "reject-proposal")
                     reply.body = json.dumps({
                         "medico_jid": str(agent.jid),
-                        "motivo": "Resource logically occupied.",
+                        "motivo": "Resource unavailable for requested zone/specialty.",
                     })
                     log(agent.nome_medico, "[PROPOSAL] CFP rejected (Status: Occupied).", "CYAN")
                 await self.send(reply)
@@ -249,9 +378,15 @@ class AgenteMedico(Agent):
                     await self.notificar_status()
                     agent.add_behaviour(agent.EvaluatePatientBehaviour(data))
                 elif sender == COORD_CIR:
+                    if data.get("sala_jid"):
+                        agent.bloco_atual = data.get("sala_jid")
                     log(agent.nome_medico, f"[ALLOCATION] Surgical Allocation ACCEPTED for {data.get('nome', '?')}. Initiating procedure.", "MAGENTA")
                     await self.notificar_status()
                     agent.add_behaviour(agent.ExecuteProcedureBehaviour(data))
+                elif sender == COORD_EXAM:
+                    log(agent.nome_medico, f"[ALLOCATION] Exam Allocation ACCEPTED for {data.get('nome', '?')}. Initiating exam.", "CYAN")
+                    await self.notificar_status()
+                    agent.add_behaviour(agent.ExecuteExamBehaviour(data))
                 else:
                     log(agent.nome_medico, f"[ALLOCATION] Generic allocation accepted.", "BLUE")
                     await self.notificar_status()
@@ -264,6 +399,8 @@ class AgenteMedico(Agent):
                 elif data["procedure"] == "surgery":
                     agent.bloco_atual = data["sala_jid"]
                     log(agent.nome_medico, f"[SYNC] Confirmation: Block {data['sala_jid']} locked for surgery.", "MAGENTA")
+                elif data["procedure"] == "internment":
+                    agent.add_behaviour(agent.ManageInternmentBehaviour(data))
 
             elif performative == "cancel":
                 prev = agent.paciente_atual

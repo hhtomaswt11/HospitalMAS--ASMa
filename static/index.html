@@ -112,6 +112,22 @@
             min-height: 0;
         }
 
+        .queue-group {
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            padding: 0.6rem;
+            background: rgba(2, 6, 23, 0.25);
+        }
+
+        .queue-group-title {
+            font-size: 0.7rem;
+            font-weight: 700;
+            color: var(--accent-cyan);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 0.5rem;
+        }
+
         /* Hospital Map (Center) */
         .hospital-core {
             display: flex;
@@ -377,6 +393,13 @@
         <!-- Hospital Map -->
         <main class="hospital-core">
             <section class="wing">
+                <div class="wing-title">Triagem</div>
+                <div class="rooms-grid" id="wing-triage">
+                    <!-- Triage Rooms -->
+                </div>
+            </section>
+
+            <section class="wing">
                 <div class="wing-title">Consultórios</div>
                 <div class="rooms-grid" id="wing-primary">
                     <!-- Standard Consultation Rooms -->
@@ -394,6 +417,13 @@
                 <div class="wing-title">Blocos Operatórios</div>
                 <div class="rooms-grid" id="wing-surgical">
                     <!-- Surgical Units -->
+                </div>
+            </section>
+
+            <section class="wing">
+                <div class="wing-title">Internamento</div>
+                <div class="rooms-grid" id="wing-inpatient">
+                    <!-- Inpatient Rooms -->
                 </div>
             </section>
         </main>
@@ -437,7 +467,37 @@
         const wingPrimary = document.getElementById('wing-primary');
         const wingSpecialized = document.getElementById('wing-specialized');
         const wingSurgical = document.getElementById('wing-surgical');
+        const wingTriage = document.getElementById('wing-triage');
+        const wingInpatient = document.getElementById('wing-inpatient');
         const logContainer = document.getElementById('log-container');
+
+        function normalizeText(value) {
+            return (value || '')
+                .toString()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .toLowerCase();
+        }
+
+        function isUrgentInfo(jid, info = {}) {
+            const typeNormalized = normalizeText(info.type);
+            return typeNormalized.includes('urgenc') || jid.toLowerCase().includes('urgente');
+        }
+
+        function formatSpecialty(value) {
+            const normalized = normalizeText(value);
+            const mapping = {
+                "raio_x": "Raio-X",
+                "tac": "TAC",
+                "analises": "Analises",
+                "cirurgiao": "Cirurgiao",
+                "pediatra": "Pediatra",
+                "ortopedia": "Ortopedia",
+                "cardiologia": "Cardiologia",
+                "triagem": "Triagem",
+            };
+            return mapping[normalized] || value;
+        }
 
         async function update() {
             try {
@@ -449,7 +509,7 @@
                     ENTITIES = { medics: {}, rooms: {}, patients: {} };
                     Object.keys(data.registry).forEach(jid => {
                         const info = data.registry[jid];
-                        if (info.role === 'medic') ENTITIES.medics[jid] = info;
+                        if (info.role === 'medic' || info.role === 'triage_medic') ENTITIES.medics[jid] = info;
                         else if (info.role === 'room') ENTITIES.rooms[jid] = info;
                         else if (info.role === 'patient') ENTITIES.patients[jid] = info;
                     });
@@ -459,8 +519,19 @@
             } catch (e) { console.error(e); }
         }
 
-        function createEntityEntry(jid, info, type, isInteracting = false) {
-            const isEmergency = info.type === "Urgência" || jid.includes("urgente");
+        function createEntityEntry(jid, info, type, isInteracting = false, showQueueSpecialty = false) {
+            const isEmergency = isUrgentInfo(jid, info);
+            let subtitle = info.type || (type === 'medic' ? 'Profissional' : 'S/ Ref');
+
+            if (type === 'medic') {
+                subtitle = formatSpecialty(info.specialty) || info.type || 'Profissional';
+            }
+
+            if (type === 'patient' && showQueueSpecialty && info.specialty) {
+                const urgencyPrefix = isEmergency ? 'Urgencia' : 'Rotina';
+                subtitle = `${urgencyPrefix} • ${formatSpecialty(info.specialty)}`;
+            }
+
             return `
                 <div class="entity-card ${isInteracting ? 'interacting' : ''}" id="card-${jid.split('@')[0]}">
                     <div class="avatar ${type === 'medic' ? 'avatar-medic' : (isEmergency ? 'avatar-emergency' : 'avatar-patient')} ${isInteracting ? 'avatar-interacting' : ''}">
@@ -468,7 +539,7 @@
                     </div>
                     <div class="entity-info">
                         <div class="entity-name">${info.name || jid.split('@')[0]}</div>
-                        <div class="entity-type">${info.type || (type === 'medic' ? 'Profissional' : 'S/ Ref')}</div>
+                        <div class="entity-type">${subtitle}</div>
                     </div>
                 </div>
             `;
@@ -476,7 +547,7 @@
 
         function renderFlow(data) {
             const resources = data.resources || {};
-            const waitlist = data.waitlist || { routine: [], emergency: [] };
+            const waitlist = data.waitlist || { routine: [], emergency: [], triage: [] };
             const logs = data.logs || [];
 
             // Tracking who is currently in a room
@@ -484,7 +555,13 @@
             const inRoomMedics = new Set();
 
             // 1. Render Rooms and identify active agents
-            const roomsHtml = { primary: '', specialized: '', surgical: '' };
+            const roomsHtml = {
+                primary: '',
+                specialized: '',
+                surgical: '',
+                triage: '',
+                inpatient: '',
+            };
 
             Object.keys(ENTITIES.rooms).forEach(roomJid => {
                 const roomInfo = ENTITIES.rooms[roomJid];
@@ -525,39 +602,122 @@
                         </div>
                     </div>
                 `;
-                roomsHtml[roomInfo.wing] += html;
+                if (roomsHtml[roomInfo.wing] !== undefined) {
+                    roomsHtml[roomInfo.wing] += html;
+                }
             });
 
             wingPrimary.innerHTML = roomsHtml.primary;
             wingSpecialized.innerHTML = roomsHtml.specialized;
             wingSurgical.innerHTML = roomsHtml.surgical;
+            wingTriage.innerHTML = roomsHtml.triage;
+            wingInpatient.innerHTML = roomsHtml.inpatient;
 
             // 2. Render Lounge (Patients NOT in rooms)
+            const triageQueue = Array.isArray(waitlist.triage) ? waitlist.triage : [];
             const routineQueue = Array.isArray(waitlist.routine) ? waitlist.routine : [];
             const emergencyQueue = Array.isArray(waitlist.emergency) ? waitlist.emergency : [];
             const queueMap = new Map();
 
-            [...emergencyQueue, ...routineQueue].forEach((p) => {
+            triageQueue.forEach((p) => {
                 const pJid = p?.doente_jid;
                 if (pJid && !queueMap.has(pJid)) {
-                    queueMap.set(pJid, p);
+                    queueMap.set(pJid, { ...p, queueType: 'triage' });
+                }
+            });
+
+            emergencyQueue.forEach((p) => {
+                const pJid = p?.doente_jid;
+                if (pJid && !queueMap.has(pJid)) {
+                    queueMap.set(pJid, { ...p, queueType: 'emergency' });
+                }
+            });
+
+            routineQueue.forEach((p) => {
+                const pJid = p?.doente_jid;
+                if (pJid && !queueMap.has(pJid)) {
+                    queueMap.set(pJid, { ...p, queueType: 'routine' });
                 }
             });
 
             let loungeHtml = '';
+
+            function renderQueueGroup(title, queueItems) {
+                if (!Array.isArray(queueItems) || queueItems.length === 0) {
+                    return '';
+                }
+                let groupHtml = `<div class="queue-group"><div class="queue-group-title">${title}</div>`;
+                queueItems.forEach((queuedPatient) => {
+                    const pJid = queuedPatient?.doente_jid;
+                    if (!pJid || inRoomPatients.has(pJid)) {
+                        return;
+                    }
+                    const registryInfo = ENTITIES.patients[pJid] || {};
+                    const isEmergency = queuedPatient.queueType === 'emergency' || queuedPatient.queueType === 'triage';
+                    groupHtml += createEntityEntry(
+                        pJid,
+                        {
+                            name: queuedPatient.nome || registryInfo.name || pJid.split('@')[0],
+                            type: isEmergency ? 'Urgencia' : (registryInfo.type || 'Em Espera'),
+                            specialty: queuedPatient.especialidade,
+                        },
+                        'patient',
+                        false,
+                        true
+                    );
+                });
+                groupHtml += '</div>';
+                return groupHtml;
+            }
+
+            const triageQueueItems = [];
+            const mergedBySpecialty = {};
+            queueMap.forEach((queuedPatient) => {
+                if (queuedPatient.queueType === 'triage') {
+                    triageQueueItems.push(queuedPatient);
+                    return;
+                }
+                const specialty = queuedPatient.especialidade || 'sem_especialidade';
+                if (!mergedBySpecialty[specialty]) {
+                    mergedBySpecialty[specialty] = [];
+                }
+                mergedBySpecialty[specialty].push(queuedPatient);
+            });
+
+            const specialties = Object.keys(mergedBySpecialty);
+
+            if (triageQueueItems.length) {
+                loungeHtml += renderQueueGroup('Triagem', triageQueueItems);
+            }
+
+            if (specialties.length) {
+                specialties.forEach((specialty) => {
+                    loungeHtml += renderQueueGroup(formatSpecialty(specialty), mergedBySpecialty[specialty]);
+                });
+            }
+
+            if (!loungeHtml) {
             queueMap.forEach((queuedPatient, pJid) => {
                 if (!inRoomPatients.has(pJid)) {
                     const registryInfo = ENTITIES.patients[pJid] || {};
+                    const isEmergency =
+                        queuedPatient.queueType === 'emergency' ||
+                        normalizeText(queuedPatient.tipo).includes('urgenc') ||
+                        (queuedPatient.prioridade !== null && queuedPatient.prioridade !== undefined);
                     loungeHtml += createEntityEntry(
                         pJid,
                         {
                             name: queuedPatient.nome || registryInfo.name || pJid.split('@')[0],
-                            type: queuedPatient.prioridade >= 9 ? 'Urgência' : (registryInfo.type || 'Em Espera')
+                            type: isEmergency ? 'Urgencia' : (registryInfo.type || 'Em Espera'),
+                            specialty: queuedPatient.especialidade,
                         },
-                        'patient'
+                        'patient',
+                        false,
+                        true
                     );
                 }
             });
+            }
             if (!loungeHtml) {
                 loungeHtml = '<div class="empty-state">Sem doentes em espera</div>';
             }

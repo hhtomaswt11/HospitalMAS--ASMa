@@ -10,7 +10,11 @@ from src.config import *
 GLOBAL_DASHBOARD = {}
 GLOBAL_WAITLIST = {
     "routine": [],
+    "routine_by_specialty": {},
     "emergency": [],
+    "emergency_by_specialty": {},
+    "triage": [],
+    "internment": [],
 }
 RECENT_LOGS = []
 
@@ -78,11 +82,21 @@ class Supervisor(Agent):
                 
                 # Also register the patient being treated
                 p_jid = data.get("paciente_atual")
-                if p_jid and p_jid not in AGENT_REGISTRY:
+                if p_jid:
+                    room_info = AGENT_REGISTRY.get(r_jid, {})
+                    room_wing = room_info.get("wing")
+                    current_patient = AGENT_REGISTRY.get(p_jid, {})
+                    current_type = str(current_patient.get("type", ""))
+
+                    if room_wing == "triage" or "urg" in current_type.lower():
+                        patient_type = "Urgência"
+                    else:
+                        patient_type = current_type or "Em Atendimento"
+
                     AGENT_REGISTRY[p_jid] = {
-                        "name": p_jid.split("@")[0].capitalize(),
+                        "name": current_patient.get("name", p_jid.split("@")[0].capitalize()),
                         "role": "patient",
-                        "type": "Em Atendimento"
+                        "type": patient_type
                     }
 
                 estado = "LIVRE" if data["disponivel"] else f"OCUPADO(A) com {data.get('paciente_atual')}"
@@ -93,8 +107,12 @@ class Supervisor(Agent):
                 data = json.loads(msg.body)
                 queue_name = data.get("queue")
                 patients = data.get("patients", [])
+                by_specialty = data.get("by_specialty")
                 if queue_name in GLOBAL_WAITLIST:
                     GLOBAL_WAITLIST[queue_name] = patients
+                    grouped_key = f"{queue_name}_by_specialty"
+                    if grouped_key in GLOBAL_WAITLIST and by_specialty is not None:
+                        GLOBAL_WAITLIST[grouped_key] = by_specialty
                     log(SUPERVISOR,
                         f"[SALA-ESPERA] Fila '{queue_name}' atualizada ({len(patients)} doentes).",
                         "YELLOW")
@@ -103,10 +121,11 @@ class Supervisor(Agent):
                 data = json.loads(msg.body)
                 p_jid = data.get("doente_jid")
                 
-                # Register emergency patients proactively
-                if p_jid and p_jid not in AGENT_REGISTRY:
+                # Keep urgent patients marked as "Urgência" even after they are in treatment.
+                if p_jid:
+                    current = AGENT_REGISTRY.get(p_jid, {})
                     AGENT_REGISTRY[p_jid] = {
-                        "name": data.get("name", p_jid.split("@")[0]),
+                        "name": data.get("nome", current.get("name", p_jid.split("@")[0])),
                         "role": "patient",
                         "type": "Urgência"
                     }

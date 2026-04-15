@@ -21,9 +21,23 @@ class CoordenadorUrgencias(Agent):
                 "nome": p.get("nome", "?"),
                 "tipo": p.get("tipo", "Urgencia"),
                 "prioridade": p.get("prioridade", 9),
+                "especialidade": p.get("especialidade"),
             }
             for p in self.pending_urgencies
         ]
+
+    def get_emergency_waitlist_by_specialty(self):
+        by_specialty = {}
+        for p in self.pending_urgencies:
+            specialty = p.get("especialidade") or "sem_especialidade"
+            by_specialty.setdefault(specialty, []).append({
+                "doente_jid": p.get("doente_jid"),
+                "nome": p.get("nome", "?"),
+                "tipo": p.get("tipo", "Urgencia"),
+                "prioridade": p.get("prioridade", 9),
+                "especialidade": p.get("especialidade"),
+            })
+        return by_specialty
 
     class EmergencyCoordinatorBehaviour(CyclicBehaviour):
 
@@ -34,6 +48,7 @@ class CoordenadorUrgencias(Agent):
             msg.body = json.dumps({
                 "queue": "emergency",
                 "patients": self.agent.get_emergency_waitlist(),
+                "by_specialty": self.agent.get_emergency_waitlist_by_specialty(),
             })
             await self.send(msg)
 
@@ -71,6 +86,7 @@ class CoordenadorUrgencias(Agent):
                     f"[PEDIDO] Pedido triado de emergência recebido: {data['nome']} "
                     f"(prioridade={data['prioridade']})", "RED")
                 self.agent.pending_urgencies.append(data)
+                self.agent.pending_urgencies.sort(key=lambda p: p.get("prioridade", URGENT_PRIORITY_MAX))
                 await self.publish_waitlist()
                 log(COORD_URG,
                     "[A AGUARDAR] A aguardar confirmação de libertação de recursos do Supervisor...",

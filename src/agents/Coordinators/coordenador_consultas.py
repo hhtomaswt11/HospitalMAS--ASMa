@@ -15,8 +15,54 @@ class CoordenadorConsultas(Agent):
     def __init__(self, agent_jid, password, **kwargs):
         super().__init__(agent_jid, password, **kwargs)
         self.alocacoes = {}         # doente_jid → {medico, sala, nome}
-        self.pending_requests = []  # fila de pedidos pendentes
+        self.pending_requests = {s: [] for s in ROUTINE_SPECIALTIES}
         self.routine_hold = False   # bloqueia rotina quando há urgências em espera
+
+    def add_pending_request(self, data, prepend=False):
+        specialty = data.get("especialidade")
+        if not specialty:
+            specialty = ROUTINE_SPECIALTIES[0]
+            data["especialidade"] = specialty
+        if specialty not in self.pending_requests:
+            self.pending_requests[specialty] = []
+        if prepend:
+            self.pending_requests[specialty].insert(0, data)
+        else:
+            self.pending_requests[specialty].append(data)
+
+    def flatten_pending_requests(self):
+        all_requests = []
+        ordered_specialties = list(ROUTINE_SPECIALTIES)
+        ordered_specialties.extend(
+            [s for s in self.pending_requests.keys() if s not in ordered_specialties]
+        )
+        for specialty in ordered_specialties:
+            all_requests.extend(self.pending_requests.get(specialty, []))
+        return all_requests
+
+    def has_pending_requests(self):
+        return any(self.pending_requests.get(s, []) for s in self.pending_requests)
+
+    def pop_pending_request(self, specialty):
+        queue = self.pending_requests.get(specialty, [])
+        if queue:
+            return queue.pop(0)
+        return None
+
+    def get_routine_waitlist_by_specialty(self):
+        by_specialty = {}
+        for specialty, queue in self.pending_requests.items():
+            by_specialty[specialty] = [
+                {
+                    "doente_jid": p.get("doente_jid"),
+                    "nome": p.get("nome", "?"),
+                    "tipo": p.get("tipo", "Normal"),
+                    "prioridade": p.get("prioridade", 0),
+                    "especialidade": p.get("especialidade"),
+                }
+                for p in queue
+            ]
+        return by_specialty
 
     def get_routine_waitlist(self):
         return [
@@ -25,8 +71,9 @@ class CoordenadorConsultas(Agent):
                 "nome": p.get("nome", "?"),
                 "tipo": p.get("tipo", "Normal"),
                 "prioridade": p.get("prioridade", 0),
+                "especialidade": p.get("especialidade"),
             }
-            for p in self.pending_requests
+            for p in self.flatten_pending_requests()
         ]
 
     class CoordinatorBehaviour(CyclicBehaviour):
@@ -38,6 +85,7 @@ class CoordenadorConsultas(Agent):
             msg.body = json.dumps({
                 "queue": "routine",
                 "patients": self.agent.get_routine_waitlist(),
+                "by_specialty": self.agent.get_routine_waitlist_by_specialty(),
             })
             await self.send(msg)
 
@@ -45,7 +93,7 @@ class CoordenadorConsultas(Agent):
         async def run(self):
             msg = await self.receive(timeout=5)
             if msg is None:
-                if self.agent.pending_requests:
+                if self.agent.has_pending_requests():
                     await self.dispatch_next_routine()
                 return
 
@@ -58,11 +106,13 @@ class CoordenadorConsultas(Agent):
                 log(COORD_CONS,
                     f"[PEDIDO] Pedido de consulta de rotina recebido: {data['nome']}",
                     "GREEN")
-                self.agent.pending_requests.append(data)
+                self.agent.add_pending_request(data)
                 await self.publish_waitlist()
+                specialty = data.get("especialidade", "?")
+                queue_len = len(self.agent.pending_requests.get(specialty, []))
                 log(COORD_CONS,
                     f"[FILA] Doente {data['nome']} adicionado à fila de rotina "
-                    f"(posição={len(self.agent.pending_requests)}).",
+                    f"(especialidade={specialty}, posição={queue_len}).",
                     "YELLOW")
                 await self.dispatch_next_routine()
 
@@ -87,11 +137,13 @@ class CoordenadorConsultas(Agent):
 
             if performative == "request" and msg_type == "patient_request":
                 data = json.loads(msg.body)
-                self.agent.pending_requests.append(data)
+                self.agent.add_pending_request(data)
                 await self.publish_waitlist()
+                specialty = data.get("especialidade", "?")
+                queue_len = len(self.agent.pending_requests.get(specialty, []))
                 log(COORD_CONS,
                     f"[FILA] Doente {data.get('nome', '?')} adicionado à fila de rotina "
-                    f"(posição={len(self.agent.pending_requests)}).",
+                    f"(especialidade={specialty}, posição={queue_len}).",
                     "YELLOW")
                 return
 
@@ -117,22 +169,36 @@ class CoordenadorConsultas(Agent):
                     "RED")
                 return
 
-            if not self.agent.pending_requests:
+            if not self.agent.has_pending_requests():
                 return
 
-            patient = self.agent.pending_requests[0]
-            log(COORD_CONS,
-                f"[FCFS] A tentar alocar cabeça da fila: {patient.get('nome', '?')}",
-                "YELLOW")
-            allocated = await self.run_contract_net(patient)
+            ordered_specialties = list(ROUTINE_SPECIALTIES)
+            ordered_specialties.extend(
+                [s for s in self.agent.pending_requests.keys() if s not in ordered_specialties]
+            )
 
-            if allocated:
-                self.agent.pending_requests.pop(0)
-                await self.publish_waitlist()
-            else:
-                log(COORD_CONS,
-                    f"[FCFS] Cabeça da fila mantém-se em espera: {patient.get('nome', '?')}",
-                    "YELLOW")
+            for specialty in ordered_specialties:
+                queue = self.agent.pending_requests.get(specialty, [])
+                if not queue:
+                    continue
+
+                patient = queue[0]
+                log(
+                    COORD_CONS,
+                    f"[FCFS] A tentar alocar cabeça da fila de {specialty}: {patient.get('nome', '?')}",
+                    "YELLOW",
+                )
+                allocated = await self.run_contract_net(patient)
+                if allocated:
+                    self.agent.pop_pending_request(specialty)
+                    await self.publish_waitlist()
+                    return
+
+                log(
+                    COORD_CONS,
+                    f"[FCFS] Doente mantém-se em espera ({specialty}): {patient.get('nome', '?')}",
+                    "YELLOW",
+                )
 
         # -----------------------------------------------------------------
         # CONTRACT-NET: CFP → Recolher propostas → Adjudicar
@@ -241,6 +307,7 @@ class CoordenadorConsultas(Agent):
                 # Registar alocação
                 agent.alocacoes[doente_jid] = {
                     "nome": nome,
+                    "especialidade": patient_data.get("especialidade"),
                     "medico_jid": medico_proposta["medico_jid"],
                     "sala_jid": sala_proposta["sala_jid"],
                 }
@@ -304,12 +371,13 @@ class CoordenadorConsultas(Agent):
                     f"será reagendado.", "YELLOW")
 
                 # Colocar o doente cancelado na fila de pendentes
-                agent.pending_requests.insert(0, {
+                agent.add_pending_request({
                     "doente_jid": doente_cancelar,
                     "nome": aloc["nome"],
                     "tipo": "Normal",
                     "prioridade": 0,
-                })
+                    "especialidade": aloc.get("especialidade"),
+                }, prepend=True)
                 await self.publish_waitlist()
 
                 # Aguardar confirmações de cancelamento
