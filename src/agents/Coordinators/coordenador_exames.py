@@ -27,7 +27,7 @@ class CoordenadorExames(Agent):
             return equipamentos, medicos
 
         async def run(self):
-            msg = await self.receive(timeout=5)
+            msg = await self.receive(timeout=COORDINATOR_RECEIVE_TIMEOUT_SECONDS)
             if msg is None:
                 return
 
@@ -85,13 +85,13 @@ class CoordenadorExames(Agent):
                 log(COORD_EXAM, f"[CFP] CFP enviado para médico de exame {m_jid}", "CYAN")
 
             # 2) Aguardar respostas
-            await asyncio.sleep(2)
+            await asyncio.sleep(CONTRACT_NET_RESPONSE_WAIT_SECONDS)
 
             equipamento_proposta = None
             medico_proposta = None
 
             for _ in range(len(equipamentos) + len(medicos_exame)):
-                reply = await self.receive(timeout=3)
+                reply = await self.receive(timeout=COORDINATOR_PROPOSAL_TIMEOUT_SECONDS)
                 if reply is None:
                     continue
 

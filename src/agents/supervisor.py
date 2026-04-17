@@ -1,4 +1,5 @@
 import json
+import asyncio
 from datetime import datetime
 
 from spade.agent import Agent
@@ -38,9 +39,6 @@ def log(agent_name, message, color="WHITE"):
     RECENT_LOGS.append({"time": timestamp, "agent": agent_name, "message": message, "color": color})
     if len(RECENT_LOGS) > 40:
         RECENT_LOGS.pop(0)
-    
-    # We dump state on every log so the dashboard is incredibly snappy and real-time
-    dump_state()
 
     if agent_name == SUPERVISOR:
         full_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -52,15 +50,18 @@ def log(agent_name, message, color="WHITE"):
 
 
 class Supervisor(Agent):
-    """
-    Supervisor Agent — Monitors emergencies, orchestrates preemption, and tracks the global hospital dashboard.
-    """
+
     def __init__(self, agent_jid, password, **kwargs):
         super().__init__(agent_jid, password, **kwargs)
 
+    class PeriodicDumperBehaviour(CyclicBehaviour):
+        async def run(self):
+            dump_state()
+            await asyncio.sleep(SUPERVISOR_DUMP_INTERVAL_SECONDS)
+
     class MonitorBehaviour(CyclicBehaviour):
         async def run(self):
-            msg = await self.receive(timeout=5)
+            msg = await self.receive(timeout=SUPERVISOR_RECEIVE_TIMEOUT_SECONDS)
             if msg is None:
                 return
 
@@ -178,3 +179,4 @@ class Supervisor(Agent):
     async def setup(self):
         log(SUPERVISOR, "Supervisor initialized.", "BOLD")
         self.add_behaviour(self.MonitorBehaviour())
+        self.add_behaviour(self.PeriodicDumperBehaviour())

@@ -72,7 +72,7 @@ class CoordenadorUrgencias(Agent):
 
 
         async def run(self):
-            msg = await self.receive(timeout=5)
+            msg = await self.receive(timeout=COORDINATOR_RECEIVE_TIMEOUT_SECONDS)
             if msg is None:
                 return
 
@@ -107,13 +107,29 @@ class CoordenadorUrgencias(Agent):
             """Contract-Net de emergência para alocação imediata."""
             nome = patient_data["nome"]
             doente_jid = patient_data["doente_jid"]
+            requested_specialty = patient_data.get("especialidade")
+
+            medicos_candidatos = [
+                m_jid
+                for m_jid in MEDICOS
+                if AGENT_REGISTRY.get(m_jid, {}).get("zone") == "normal"
+                and AGENT_REGISTRY.get(m_jid, {}).get("specialty") == requested_specialty
+            ]
+
+            if not medicos_candidatos:
+                log(
+                    COORD_URG,
+                    f"[CFP-FILTER] Sem médicos compatíveis (esp={requested_specialty}) para {nome}.",
+                    "YELLOW",
+                )
+                return False
 
             log(COORD_URG,
                 f"[CONTRACT-NET] A iniciar negociação de EMERGÊNCIA para {nome}...",
                 "RED")
 
-            # 1) CFP a Médicos
-            for m_jid in MEDICOS:
+            # 1) CFP apenas a médicos compatíveis
+            for m_jid in medicos_candidatos:
                 cfp = Message(to=m_jid)
                 cfp.body = json.dumps(patient_data)
                 cfp.set_metadata("performative", "cfp")
@@ -135,14 +151,14 @@ class CoordenadorUrgencias(Agent):
                     f"[CFP] CFP de Emergência enviado para {s_jid}", "RED")
 
             # 3) Recolher propostas
-            await asyncio.sleep(2)
+            await asyncio.sleep(CONTRACT_NET_RESPONSE_WAIT_SECONDS)
 
             medico_proposta = None
             sala_proposta = None
-            expected_replies = len(MEDICOS) + len(SALAS)
+            expected_replies = len(medicos_candidatos) + len(SALAS)
 
             for _ in range(expected_replies):
-                reply = await self.receive(timeout=3)
+                reply = await self.receive(timeout=COORDINATOR_PROPOSAL_TIMEOUT_SECONDS)
                 if reply is None:
                     continue
 

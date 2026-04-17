@@ -9,7 +9,6 @@ from src.config import *
 
 
 class CoordenadorTriagem(Agent):
-    """Coordinates urgent intake through triage doctors and triage rooms."""
 
     def __init__(self, agent_jid, password, **kwargs):
         super().__init__(agent_jid, password, **kwargs)
@@ -17,7 +16,7 @@ class CoordenadorTriagem(Agent):
 
     class TriageCoordinatorBehaviour(CyclicBehaviour):
         async def run(self):
-            msg = await self.receive(timeout=5)
+            msg = await self.receive(timeout=COORDINATOR_RECEIVE_TIMEOUT_SECONDS)
             if msg is None:
                 if self.agent.pending_triage:
                     await self.dispatch_next_triage()
@@ -81,14 +80,14 @@ class CoordenadorTriagem(Agent):
                 cfp.thread = doente_jid
                 await self.send(cfp)
 
-            await asyncio.sleep(1)
+            await asyncio.sleep(TRIAGE_CONTRACT_NET_RESPONSE_WAIT_SECONDS)
 
             medico_proposta = None
             sala_proposta = None
             expected_replies = len(MEDICOS_TRIAGEM) + len(SALAS_TRIAGEM)
 
             for _ in range(expected_replies):
-                reply = await self.receive(timeout=2)
+                reply = await self.receive(timeout=TRIAGE_CONTRACT_NET_PROPOSAL_TIMEOUT_SECONDS)
                 if reply is None:
                     continue
                 if reply.thread != doente_jid:

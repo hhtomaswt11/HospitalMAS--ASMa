@@ -13,7 +13,7 @@ class CoordenadorCirurgias(Agent):
     class SurgeryCoordinatorBehaviour(CyclicBehaviour):
 
         async def run(self):
-            msg = await self.receive(timeout=5)
+            msg = await self.receive(timeout=COORDINATOR_RECEIVE_TIMEOUT_SECONDS)
             if msg is None:
                 return
 
@@ -64,14 +64,14 @@ class CoordenadorCirurgias(Agent):
                     "MAGENTA")
 
             # 3) Aguardar respostas
-            await asyncio.sleep(2)
+            await asyncio.sleep(CONTRACT_NET_RESPONSE_WAIT_SECONDS)
 
             bloco_proposta  = None
             medico_proposta = None
             expected_replies = len(BLOCOS) + len(medicos_cirurgia)
 
             for _ in range(expected_replies):
-                reply = await self.receive(timeout=3)
+                reply = await self.receive(timeout=COORDINATOR_PROPOSAL_TIMEOUT_SECONDS)
                 if reply is None:
                     continue
 

@@ -1,52 +1,26 @@
 import json
-import time
 
-from spade.agent import Agent
-from spade.behaviour import CyclicBehaviour, OneShotBehaviour
+from spade.behaviour import CyclicBehaviour
 from spade.message import Message
+
+from src.agents.Resources.resource_agent import ResourceAgent
 
 from src.config import *
 
-class AgenteSala(Agent):
+class AgenteSala(ResourceAgent):
     """
     Manages the temporal availability of a consultation room or clinical specific equipment.
     """
     def __init__(self, agent_jid, password, nome_sala="Sala", **kwargs):
         super().__init__(agent_jid, password, **kwargs)
         self.nome_sala = nome_sala
-        self.disponivel = True
-        self.paciente_atual = None
 
-    class StartupStatusBehaviour(OneShotBehaviour):
-        async def run(self):
-            msg = Message(to=jid(SUPERVISOR))
-            msg.set_metadata("performative", "inform")
-            msg.set_metadata("type", "resource_status")
-            msg.body = json.dumps({
-                "recurso_jid": str(self.agent.jid),
-                "nome": self.agent.nome_sala,
-                "disponivel": self.agent.disponivel,
-                "paciente_atual": self.agent.paciente_atual,
-                "last_activity": time.time()
-            })
-            await self.send(msg)
+    def get_resource_name(self):
+        return self.nome_sala
 
     class HandleProposalsBehaviour(CyclicBehaviour):
-        async def notificar_status(self):
-            msg = Message(to=jid(SUPERVISOR))
-            msg.set_metadata("performative", "inform")
-            msg.set_metadata("type", "resource_status")
-            msg.body = json.dumps({
-                "recurso_jid": str(self.agent.jid),
-                "nome": self.agent.nome_sala,
-                "disponivel": self.agent.disponivel,
-                "paciente_atual": self.agent.paciente_atual,
-                "last_activity": time.time()
-            })
-            await self.send(msg)
-
         async def run(self):
-            msg = await self.receive(timeout=10)
+            msg = await self.receive(timeout=RESOURCE_RECEIVE_TIMEOUT_SECONDS)
             if msg is None:
                 return
 
@@ -80,21 +54,21 @@ class AgenteSala(Agent):
                 agent.disponivel = False
                 agent.paciente_atual = data.get("doente_jid")
                 log(agent.nome_sala, f"[ALLOCATION] Allocation ACCEPTED for {data.get('nome', '?')}", "BLUE")
-                await self.notificar_status()
+                await self.agent.send_status(self)
 
             elif performative == "inform" and msg.get_metadata("type") == "release":
                 prev = agent.paciente_atual
                 agent.disponivel = True
                 agent.paciente_atual = None
                 log(agent.nome_sala, f"[LIBERTAÇÃO] Procedimento concluído com sucesso. Instalação livre (doente anterior: {prev}).", "GREEN")
-                await self.notificar_status()
+                await self.agent.send_status(self)
 
             elif performative == "cancel":
                 prev = agent.paciente_atual
                 agent.disponivel = True
                 agent.paciente_atual = None
                 log(agent.nome_sala, f"[PREEMPTION] Preemption triggered. Resource freed (previous patient ID: {prev}).", "RED")
-                await self.notificar_status()
+                await self.agent.send_status(self)
 
                 reply = msg.make_reply()
                 reply.set_metadata("performative", "inform")

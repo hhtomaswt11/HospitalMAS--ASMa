@@ -7,9 +7,7 @@ from spade.message import Message
 from src.config import *
 
 class AgenteDoente(Agent):
-    """
-    Represents a patient emitting a clinical request.
-    """
+    
     def __init__(self, agent_jid, password, nome_doente, tipo_entrada="Normal",
                  especialidade=None, prioridade=0, sintomas="", **kwargs):
         super().__init__(agent_jid, password, **kwargs)

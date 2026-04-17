@@ -1,38 +1,24 @@
 import json
 import random
-import time
 import asyncio
 
-from spade.agent import Agent
 from spade.behaviour import CyclicBehaviour, OneShotBehaviour
 from spade.message import Message
 
+from src.agents.Resources.resource_agent import ResourceAgent
 from src.config import *
 
 
-class AgenteTriagem(Agent):
+class AgenteTriagem(ResourceAgent):
     """Triage physician: receives triage CFPs and classifies urgent patients."""
 
     def __init__(self, agent_jid, password, nome_medico="Medico Triagem", **kwargs):
         super().__init__(agent_jid, password, **kwargs)
         self.nome_medico = nome_medico
-        self.disponivel = True
-        self.paciente_atual = None
         self.sala_triagem = None
 
-    class StartupStatusBehaviour(OneShotBehaviour):
-        async def run(self):
-            msg = Message(to=jid(SUPERVISOR))
-            msg.set_metadata("performative", "inform")
-            msg.set_metadata("type", "resource_status")
-            msg.body = json.dumps({
-                "recurso_jid": str(self.agent.jid),
-                "nome": self.agent.nome_medico,
-                "disponivel": self.agent.disponivel,
-                "paciente_atual": self.agent.paciente_atual,
-                "last_activity": time.time(),
-            })
-            await self.send(msg)
+    def get_resource_name(self):
+        return self.nome_medico
 
     class ClassifyUrgentPatientBehaviour(OneShotBehaviour):
         def __init__(self, data):
@@ -43,10 +29,10 @@ class AgenteTriagem(Agent):
             nome = self.data.get("nome", "?")
             doente_jid = self.data.get("doente_jid")
 
-            await self.send_status_update(disponivel=False)
+            await self.agent.send_status(self)
             log(self.agent.nome_medico, f"[TRIAGEM] A classificar urgencia para {nome}.", "YELLOW")
 
-            await asyncio.sleep(2)
+            await asyncio.sleep(TRIAGE_CLASSIFICATION_SECONDS)
             self.data["prioridade"] = random.randint(URGENT_PRIORITY_MIN, URGENT_PRIORITY_MAX)
             self.data["especialidade"] = random.choice(URGENT_TRIAGE_SPECIALTIES)
             self.data["triagem_medico"] = self.agent.nome_medico
@@ -85,24 +71,11 @@ class AgenteTriagem(Agent):
             self.agent.disponivel = True
             self.agent.paciente_atual = None
             self.agent.sala_triagem = None
-            await self.send_status_update(disponivel=True)
-
-        async def send_status_update(self, disponivel):
-            msg = Message(to=jid(SUPERVISOR))
-            msg.set_metadata("performative", "inform")
-            msg.set_metadata("type", "resource_status")
-            msg.body = json.dumps({
-                "recurso_jid": str(self.agent.jid),
-                "nome": self.agent.nome_medico,
-                "disponivel": disponivel,
-                "paciente_atual": self.agent.paciente_atual,
-                "last_activity": time.time(),
-            })
-            await self.send(msg)
+            await self.agent.send_status(self)
 
     class HandleTriagemBehaviour(CyclicBehaviour):
         async def run(self):
-            msg = await self.receive(timeout=10)
+            msg = await self.receive(timeout=RESOURCE_RECEIVE_TIMEOUT_SECONDS)
             if msg is None:
                 return
 

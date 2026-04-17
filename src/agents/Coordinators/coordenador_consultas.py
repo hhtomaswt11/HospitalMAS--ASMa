@@ -8,9 +8,6 @@ from spade.message import Message
 from src.config import *
 
 class CoordenadorConsultas(Agent):
-    """
-    Receives routine consultation requests and negotiates.
-    """
 
     def __init__(self, agent_jid, password, **kwargs):
         super().__init__(agent_jid, password, **kwargs)
@@ -91,7 +88,7 @@ class CoordenadorConsultas(Agent):
 
 
         async def run(self):
-            msg = await self.receive(timeout=5)
+            msg = await self.receive(timeout=COORDINATOR_RECEIVE_TIMEOUT_SECONDS)
             if msg is None:
                 if self.agent.has_pending_requests():
                     await self.dispatch_next_routine()
@@ -208,6 +205,22 @@ class CoordenadorConsultas(Agent):
             agent = self.agent
             nome = patient_data["nome"]
             doente_jid = patient_data["doente_jid"]
+            requested_specialty = patient_data.get("especialidade")
+
+            medicos_candidatos = [
+                m_jid
+                for m_jid in MEDICOS
+                if AGENT_REGISTRY.get(m_jid, {}).get("zone") == "normal"
+                and AGENT_REGISTRY.get(m_jid, {}).get("specialty") == requested_specialty
+            ]
+
+            if not medicos_candidatos:
+                log(
+                    COORD_CONS,
+                    f"[CFP-FILTER] Sem médicos compatíveis (esp={requested_specialty}) para {nome}.",
+                    "YELLOW",
+                )
+                return False
 
             if self.agent.routine_hold:
                 log(COORD_CONS,
@@ -218,8 +231,8 @@ class CoordenadorConsultas(Agent):
             log(COORD_CONS,
                 f"[CONTRACT-NET] A iniciar negociação para {nome}...", "GREEN")
 
-            # 1) Enviar CFP a todos os Médicos
-            for m_jid in MEDICOS:
+            # 1) Enviar CFP apenas a médicos compatíveis
+            for m_jid in medicos_candidatos:
                 cfp = Message(to=m_jid)
                 cfp.body = json.dumps(patient_data)
                 cfp.set_metadata("performative", "cfp")
@@ -239,14 +252,14 @@ class CoordenadorConsultas(Agent):
                 log(COORD_CONS, f"[CFP] Call for Proposal enviado à sala {s_jid}", "GREEN")
 
             # 3) Aguardar e recolher propostas
-            await asyncio.sleep(2)  # tempo para respostas chegarem
+            await asyncio.sleep(CONTRACT_NET_RESPONSE_WAIT_SECONDS)  # tempo para respostas chegarem
 
             medico_proposta = None
             sala_proposta = None
-            expected_replies = len(MEDICOS) + len(SALAS)
+            expected_replies = len(medicos_candidatos) + len(SALAS)
 
             for _ in range(expected_replies):
-                reply = await self.receive(timeout=3)
+                reply = await self.receive(timeout=COORDINATOR_PROPOSAL_TIMEOUT_SECONDS)
                 if reply is None:
                     continue
 
@@ -381,7 +394,7 @@ class CoordenadorConsultas(Agent):
                 await self.publish_waitlist()
 
                 # Aguardar confirmações de cancelamento
-                await asyncio.sleep(2)
+                await asyncio.sleep(PREEMPTION_CONFIRM_WAIT_SECONDS)
 
                 # Informar o Supervisor que os recursos foram libertados
                 confirm = Message(to=jid(SUPERVISOR))

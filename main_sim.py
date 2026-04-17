@@ -103,7 +103,7 @@ async def main():
         await a.start(auto_register=True)
         agents.append(a)
 
-    await asyncio.sleep(2)
+    await asyncio.sleep(SIM_INFRA_READY_WAIT_SECONDS)
     log("SIMULATOR", "Infrastructure ready. Opening doors to patients...", "CYAN")
 
     # 3. Gerar Pacientes
@@ -114,7 +114,7 @@ async def main():
     start_time = time.time()
     try:
         while time.time() - start_time < SIMULATION_DURATION:
-            await asyncio.sleep(5)
+            await asyncio.sleep(SIM_PROGRESS_TICK_SECONDS)
             elapsed = int(time.time() - start_time)
             print(f"--- SIMULATION PROGRESS: {elapsed}/{SIMULATION_DURATION}s ---")
     except KeyboardInterrupt:

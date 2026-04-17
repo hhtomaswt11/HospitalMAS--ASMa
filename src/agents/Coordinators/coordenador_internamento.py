@@ -18,7 +18,7 @@ class CoordenadorInternamento(Agent):
 
     class InternamentoBehaviour(CyclicBehaviour):
         async def run(self):
-            msg = await self.receive(timeout=5)
+            msg = await self.receive(timeout=COORDINATOR_RECEIVE_TIMEOUT_SECONDS)
             if msg is None:
                 if self.agent.pending_internments:
                     await self.dispatch_next_internment()
@@ -78,11 +78,11 @@ class CoordenadorInternamento(Agent):
                 cfp.thread = doente_jid
                 await self.send(cfp)
 
-            await asyncio.sleep(1)
+            await asyncio.sleep(INTERNMENT_CONTRACT_NET_RESPONSE_WAIT_SECONDS)
             room_proposal = None
 
             for _ in range(len(INTERNAMENTO)):
-                reply = await self.receive(timeout=2)
+                reply = await self.receive(timeout=INTERNMENT_CONTRACT_NET_PROPOSAL_TIMEOUT_SECONDS)
                 if reply is None:
                     continue
                 if reply.thread != doente_jid:

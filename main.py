@@ -90,7 +90,7 @@ async def main():
     await supervisor.start(auto_register=True)
 
     # Aguardar estabilização de todos os agentes
-    await asyncio.sleep(2)
+    await asyncio.sleep(MAIN_STARTUP_STABILIZATION_SECONDS)
 
     # ==========================================================
     # FASE 1: Doente Normal 1 — Consulta de rotina
@@ -109,7 +109,7 @@ async def main():
     await doente_n1.start(auto_register=True)
 
     # Aguardar apenas 2 segundos para que a Fase 2 arranque ENQUANTO o João da Fase 1 ainda está em consulta (que demora 4s)
-    await asyncio.sleep(2)
+    await asyncio.sleep(MAIN_PHASE_GAP_SECONDS)
 
     # ==========================================================
     # FASE 2: Doente Normal 2 — Recursos já ocupados
@@ -128,7 +128,7 @@ async def main():
     await doente_n2.start(auto_register=True)
 
     # Aguardar processamento
-    await asyncio.sleep(8)
+    await asyncio.sleep(MAIN_POST_PHASE2_WAIT_SECONDS)
 
     # ==========================================================
     # FASE 3: URGÊNCIA — Preemption / Reescalonamento Dinâmico
@@ -147,7 +147,7 @@ async def main():
     await doente_u1.start(auto_register=True)
 
     # Aguardar todo o fluxo: Triagem → Supervisor → Preemption → Contract-Net
-    await asyncio.sleep(15)
+    await asyncio.sleep(MAIN_URGENT_FLOW_WAIT_SECONDS)
 
     # ==========================================================
     # FASE 4: Cascata de Cuidados — Exame → Cirurgia (Totalmente Autónoma)
@@ -158,7 +158,7 @@ async def main():
 
     # Aguardar que o AgenteMedico (Dr. Silva) diagnostique autonomamente o Pedro,
     # solicite o Exame, aguarde, e acione a Cirurgia.
-    await asyncio.sleep(20)
+    await asyncio.sleep(MAIN_CASCADE_WAIT_SECONDS)
 
     # Parar todos os agentes de forma ordenada
     agents = [
