@@ -9,8 +9,32 @@ from src.config import *
 
 class CoordenadorExames(Agent):
 
+    def __init__(self, agent_jid, password, **kwargs):
+        super().__init__(agent_jid, password, **kwargs)
+        self.pending_exam_requests = []
+
 
     class ExamCoordinatorBehaviour(CyclicBehaviour):
+
+        async def handle_out_of_band_message(self, msg):
+            performative = msg.get_metadata("performative")
+            msg_type = msg.get_metadata("type")
+
+            if performative == "request" and msg_type == "exam_request":
+                data = json.loads(msg.body)
+                self.agent.pending_exam_requests.append(data)
+                log(COORD_EXAM,
+                    f"[FILA-EXAME] Pedido enfileirado fora de banda: {data.get('nome', '?')}",
+                    "YELLOW")
+
+        async def dispatch_next_exam(self):
+            if not self.agent.pending_exam_requests:
+                return
+
+            patient = self.agent.pending_exam_requests[0]
+            allocated = await self.run_exam_contract_net(patient)
+            if allocated:
+                self.agent.pending_exam_requests.pop(0)
 
         def get_exam_candidates(self, exam_specialty):
             equipamentos = [
@@ -29,6 +53,8 @@ class CoordenadorExames(Agent):
         async def run(self):
             msg = await self.receive(timeout=COORDINATOR_RECEIVE_TIMEOUT_SECONDS)
             if msg is None:
+                if self.agent.pending_exam_requests:
+                    await self.dispatch_next_exam()
                 return
 
             performative = msg.get_metadata("performative")
@@ -40,7 +66,8 @@ class CoordenadorExames(Agent):
                 log(COORD_EXAM,
                     f"[PEDIDO] Pedido de diagnóstico MCDT recebido para: {data.get('nome', '?')}",
                     "CYAN")
-                await self.run_exam_contract_net(data)
+                self.agent.pending_exam_requests.append(data)
+                await self.dispatch_next_exam()
 
             # Propostas chegam ao mesmo behaviour (sem template restritivo)
             # — tratadas dentro de run_exam_contract_net via receive().
@@ -96,6 +123,7 @@ class CoordenadorExames(Agent):
                     continue
 
                 if reply.thread != doente_jid:
+                    await self.handle_out_of_band_message(reply)
                     continue
 
                 perf = reply.get_metadata("performative")

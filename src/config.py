@@ -125,10 +125,11 @@ URGENT_PRIORITY_MAX = 3
 SPECIALTY_RX = "raio_x"
 SPECIALTY_TAC = "tac"
 SPECIALTY_ANALISES = "analises"
-SPECIALTY_CIRURGIA = "cirurgiao"
-SPECIALTY_PEDIATRIA = "pediatra"
+SPECIALTY_CIRURGIA = "cirurgia"
+SPECIALTY_PEDIATRIA = "pediatria"
 SPECIALTY_ORTOPEDIA = "ortopedia"
 SPECIALTY_CARDIOLOGIA = "cardiologia"
+SPECIALITY_TRIAGEM = "triagem"
 
 ROUTINE_SPECIALTIES = [
     SPECIALTY_PEDIATRIA,
@@ -236,12 +237,14 @@ AGENT_REGISTRY = {
         "type": "Triagem",
         "role": "triage_medic",
         "zone": "triage",
+        "specialty": SPECIALITY_TRIAGEM,
     },
     jid(MEDICO_TRIAGEM2): {
         "name": "Dra. Leonor Viana",
         "type": "Triagem",
         "role": "triage_medic",
         "zone": "triage",
+        "specialty": SPECIALITY_TRIAGEM,
     },
 
     jid(SALA1): {"name": "Consultorio 1", "wing": "primary", "role": "room"},

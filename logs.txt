@@ -1,0 +1,895 @@
+======================================================================
+  SISTEMA MULTIAGENTE — SIMULAÇÃO HOSPITALAR REALISTA
+  Duração: 300s | Escala: Médica/Surgical Full
+======================================================================
+
+[14:50:49.630] [coord_consultas] Coordenador de Consultas iniciado.
+[14:50:49.692] [coord_urgencias] Coordenador de Urgências iniciado.
+[14:50:49.753] [coord_exames] Coordenador de Exames iniciado.
+[14:50:49.815] [coord_cirurgias] Coordenador de Cirurgias iniciado.
+[14:50:49.872] [coord_triagem] Coordenador de Triagem iniciado.
+[14:50:49.940] [coord_internamento] Coordenador de Internamento iniciado.
+[14:50:50.013] [supervisor] Supervisor initialized.
+[14:50:50.080] [Dr. Jose Silva] AgenteMedico initialized (available=True)
+[14:50:50.104] [supervisor] [DASHBOARD] Dr. Jose Silva -> LIVRE
+[14:50:50.150] [Dra. Beatriz Santos] AgenteMedico initialized (available=True)
+[14:50:50.173] [supervisor] [DASHBOARD] Dra. Beatriz Santos -> LIVRE
+[14:50:50.216] [Dr. Henrique Costa] AgenteMedico initialized (available=True)
+[14:50:50.236] [supervisor] [DASHBOARD] Dr. Henrique Costa -> LIVRE
+[14:50:50.270] [Dr. Ricardo Lima] AgenteMedico initialized (available=True)
+[14:50:50.302] [supervisor] [DASHBOARD] Dr. Ricardo Lima -> LIVRE
+[14:50:50.356] [Dra. Ana Leal] AgenteMedico initialized (available=True)
+[14:50:50.386] [supervisor] [DASHBOARD] Dra. Ana Leal -> LIVRE
+[14:50:50.422] [Dr. Hugo Ribeiro] AgenteMedico initialized (available=True)
+[14:50:50.444] [supervisor] [DASHBOARD] Dr. Hugo Ribeiro -> LIVRE
+[14:50:50.481] [Dra. Marta Faria] AgenteMedico initialized (available=True)
+[14:50:50.504] [supervisor] [DASHBOARD] Dra. Marta Faria -> LIVRE
+[14:50:50.546] [Dr. Paulo Rocha] AgenteMedico initialized (available=True)
+[14:50:50.569] [supervisor] [DASHBOARD] Dr. Paulo Rocha -> LIVRE
+[14:50:50.604] [Dra. Rita Goncalves] AgenteMedico initialized (available=True)
+[14:50:50.628] [supervisor] [DASHBOARD] Dra. Rita Goncalves -> LIVRE
+[14:50:50.670] [Dr. Bruno Martins] AgenteMedico initialized (available=True)
+[14:50:50.689] [supervisor] [DASHBOARD] Dr. Bruno Martins -> LIVRE
+[14:50:50.728] [Dra. Sara Pires] AgenteMedico initialized (available=True)
+[14:50:50.750] [supervisor] [DASHBOARD] Dra. Sara Pires -> LIVRE
+[14:50:50.787] [Dr. Andre Lopes] AgenteMedico initialized (available=True)
+[14:50:50.811] [supervisor] [DASHBOARD] Dr. Andre Lopes -> LIVRE
+[14:50:50.849] [Dra. Mariana Teixeira] AgenteMedico initialized (available=True)
+[14:50:50.871] [supervisor] [DASHBOARD] Dra. Mariana Teixeira -> LIVRE
+[14:50:50.912] [Dr. Tiago Pinto] AgenteTriagem inicializado.
+[14:50:50.950] [supervisor] [DASHBOARD] Dr. Tiago Pinto -> LIVRE
+[14:50:51.009] [Dra. Leonor Viana] AgenteTriagem inicializado.
+[14:50:51.039] [supervisor] [DASHBOARD] Dra. Leonor Viana -> LIVRE
+[14:50:51.085] [Consultorio 1] AgenteSala initialized (available=True)
+[14:50:51.113] [supervisor] [DASHBOARD] Consultorio 1 -> LIVRE
+[14:50:51.170] [Consultorio 2] AgenteSala initialized (available=True)
+[14:50:51.203] [supervisor] [DASHBOARD] Consultorio 2 -> LIVRE
+[14:50:51.259] [Consultorio 3] AgenteSala initialized (available=True)
+[14:50:51.283] [supervisor] [DASHBOARD] Consultorio 3 -> LIVRE
+[14:50:51.322] [Consultorio 4] AgenteSala initialized (available=True)
+[14:50:51.347] [supervisor] [DASHBOARD] Consultorio 4 -> LIVRE
+[14:50:51.384] [Consultorio 5] AgenteSala initialized (available=True)
+[14:50:51.408] [supervisor] [DASHBOARD] Consultorio 5 -> LIVRE
+[14:50:51.464] [Consultorio 6] AgenteSala initialized (available=True)
+[14:50:51.502] [supervisor] [DASHBOARD] Consultorio 6 -> LIVRE
+[14:50:51.551] [Consultorio 7] AgenteSala initialized (available=True)
+[14:50:51.577] [supervisor] [DASHBOARD] Consultorio 7 -> LIVRE
+[14:50:51.622] [Consultorio 8] AgenteSala initialized (available=True)
+[14:50:51.646] [supervisor] [DASHBOARD] Consultorio 8 -> LIVRE
+[14:50:51.684] [Consultorio 9] AgenteSala initialized (available=True)
+[14:50:51.707] [supervisor] [DASHBOARD] Consultorio 9 -> LIVRE
+[14:50:51.743] [Consultorio 10] AgenteSala initialized (available=True)
+[14:50:51.765] [supervisor] [DASHBOARD] Consultorio 10 -> LIVRE
+[14:50:51.808] [Sala de Raio-X 1] AgenteSala initialized (available=True)
+[14:50:51.832] [supervisor] [DASHBOARD] Sala de Raio-X 1 -> LIVRE
+[14:50:51.869] [Sala de Raio-X 2] AgenteSala initialized (available=True)
+[14:50:51.892] [supervisor] [DASHBOARD] Sala de Raio-X 2 -> LIVRE
+[14:50:51.930] [Sala de TAC 1] AgenteSala initialized (available=True)
+[14:50:51.954] [supervisor] [DASHBOARD] Sala de TAC 1 -> LIVRE
+[14:50:52.016] [Sala de TAC 2] AgenteSala initialized (available=True)
+[14:50:52.048] [supervisor] [DASHBOARD] Sala de TAC 2 -> LIVRE
+[14:50:52.091] [Sala de Analises 1] AgenteSala initialized (available=True)
+[14:50:52.114] [supervisor] [DASHBOARD] Sala de Analises 1 -> LIVRE
+[14:50:52.152] [Sala de Analises 2] AgenteSala initialized (available=True)
+[14:50:52.182] [supervisor] [DASHBOARD] Sala de Analises 2 -> LIVRE
+[14:50:52.225] [Bloco Operatório A] AgenteSala initialized (available=True)
+[14:50:52.247] [supervisor] [DASHBOARD] Bloco Operatório A -> LIVRE
+[14:50:52.285] [Bloco Operatório B] AgenteSala initialized (available=True)
+[14:50:52.316] [supervisor] [DASHBOARD] Bloco Operatório B -> LIVRE
+[14:50:52.364] [Bloco Operatório C] AgenteSala initialized (available=True)
+[14:50:52.394] [supervisor] [DASHBOARD] Bloco Operatório C -> LIVRE
+[14:50:52.443] [Triagem 1] AgenteSala initialized (available=True)
+[14:50:52.469] [supervisor] [DASHBOARD] Triagem 1 -> LIVRE
+[14:50:52.513] [Triagem 2] AgenteSala initialized (available=True)
+[14:50:52.540] [supervisor] [DASHBOARD] Triagem 2 -> LIVRE
+[14:50:52.582] [Internamento 1] AgenteSala initialized (available=True)
+[14:50:52.606] [supervisor] [DASHBOARD] Internamento 1 -> LIVRE
+[14:50:52.647] [Internamento 2] AgenteSala initialized (available=True)
+[14:50:52.670] [supervisor] [DASHBOARD] Internamento 2 -> LIVRE
+[14:50:52.710] [Internamento 3] AgenteSala initialized (available=True)
+[14:50:52.733] [supervisor] [DASHBOARD] Internamento 3 -> LIVRE
+[14:50:52.773] [Internamento 4] AgenteSala initialized (available=True)
+[14:50:52.774] [supervisor] [DASHBOARD] Internamento 4 -> LIVRE
+[14:50:54.774] [SIMULATOR] Infrastructure ready. Opening doors to patients...
+[14:50:54.774] [SIMULATOR] Starting Normal arrival generator (avg every 5.0s)
+[14:50:54.774] [SIMULATOR] Starting Urgencia arrival generator (avg every 20.0s)
+--- SIMULATION PROGRESS: 5/300s ---
+[14:51:01.938] [Walter_265] AgenteDoente initialized (type=Normal)
+[14:51:01.938] [Walter_265] [PEDIDO] Consulta de ROTINA para coord_consultas (esp=cardiologia)
+[14:51:01.938] [Walter_265] [SUCESSO] Pedido enviado com sucesso.
+[14:51:01.939] [coord_consultas] [PEDIDO] Pedido de consulta de rotina recebido: Walter_265
+[14:51:01.939] [coord_consultas] [FILA] Doente Walter_265 adicionado à fila de rotina (especialidade=cardiologia, posição=1).
+[14:51:01.939] [coord_consultas] [FCFS] A tentar alocar cabeça da fila de cardiologia: Walter_265
+[14:51:01.939] [coord_consultas] [CONTRACT-NET] A iniciar negociação para Walter_265...
+[14:51:01.939] [coord_consultas] [CFP] Call for Proposal enviado ao médico medico3@127.0.0.1
+[14:51:01.939] [coord_consultas] [CFP] Call for Proposal enviado ao médico medico10@127.0.0.1
+[14:51:01.939] [coord_consultas] [CFP] Call for Proposal enviado à sala sala1@127.0.0.1
+[14:51:01.939] [coord_consultas] [CFP] Call for Proposal enviado à sala sala2@127.0.0.1
+[14:51:01.939] [coord_consultas] [CFP] Call for Proposal enviado à sala sala3@127.0.0.1
+[14:51:01.939] [coord_consultas] [CFP] Call for Proposal enviado à sala sala4@127.0.0.1
+[14:51:01.939] [coord_consultas] [CFP] Call for Proposal enviado à sala sala5@127.0.0.1
+[14:51:01.939] [coord_consultas] [CFP] Call for Proposal enviado à sala sala6@127.0.0.1
+[14:51:01.939] [coord_consultas] [CFP] Call for Proposal enviado à sala sala7@127.0.0.1
+[14:51:01.939] [coord_consultas] [CFP] Call for Proposal enviado à sala sala8@127.0.0.1
+[14:51:01.940] [coord_consultas] [CFP] Call for Proposal enviado à sala sala9@127.0.0.1
+[14:51:01.940] [coord_consultas] [CFP] Call for Proposal enviado à sala sala10@127.0.0.1
+[14:51:01.941] [supervisor] [SALA-ESPERA] Fila 'routine' atualizada (1 doentes).
+[14:51:01.941] [Dr. Henrique Costa] [CFP] Call for Proposal received for patient Walter_265
+[14:51:01.941] [Dr. Henrique Costa] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:01.941] [Dr. Bruno Martins] [CFP] Call for Proposal received for patient Walter_265
+[14:51:01.941] [Dr. Bruno Martins] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:01.941] [Consultorio 1] [CFP] Call for Proposal received for patient Walter_265
+[14:51:01.941] [Consultorio 1] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:01.941] [Consultorio 2] [CFP] Call for Proposal received for patient Walter_265
+[14:51:01.941] [Consultorio 2] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:01.941] [Consultorio 3] [CFP] Call for Proposal received for patient Walter_265
+[14:51:01.941] [Consultorio 3] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:01.942] [Consultorio 4] [CFP] Call for Proposal received for patient Walter_265
+[14:51:01.942] [Consultorio 4] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:01.942] [Consultorio 5] [CFP] Call for Proposal received for patient Walter_265
+[14:51:01.942] [Consultorio 5] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:01.942] [Consultorio 6] [CFP] Call for Proposal received for patient Walter_265
+[14:51:01.942] [Consultorio 6] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:01.942] [Consultorio 7] [CFP] Call for Proposal received for patient Walter_265
+[14:51:01.942] [Consultorio 7] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:01.942] [Consultorio 8] [CFP] Call for Proposal received for patient Walter_265
+[14:51:01.942] [Consultorio 8] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:01.942] [Consultorio 9] [CFP] Call for Proposal received for patient Walter_265
+[14:51:01.942] [Consultorio 9] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:01.942] [Consultorio 10] [CFP] Call for Proposal received for patient Walter_265
+[14:51:01.942] [Consultorio 10] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:03.940] [coord_consultas] Proposta de médico recebida: Dr. Henrique Costa
+[14:51:03.940] [coord_consultas] Proposta de médico recebida: Dr. Bruno Martins
+[14:51:03.940] [coord_consultas] Proposta de sala recebida: Consultorio 1
+[14:51:03.940] [coord_consultas] Proposta de sala recebida: Consultorio 2
+[14:51:03.940] [coord_consultas] Proposta de sala recebida: Consultorio 3
+[14:51:03.941] [coord_consultas] Proposta de sala recebida: Consultorio 4
+[14:51:03.941] [coord_consultas] Proposta de sala recebida: Consultorio 5
+[14:51:03.941] [coord_consultas] Proposta de sala recebida: Consultorio 6
+[14:51:03.941] [coord_consultas] Proposta de sala recebida: Consultorio 7
+[14:51:03.941] [coord_consultas] Proposta de sala recebida: Consultorio 8
+[14:51:03.941] [coord_consultas] Proposta de sala recebida: Consultorio 9
+[14:51:03.941] [coord_consultas] Proposta de sala recebida: Consultorio 10
+[14:51:03.942] [coord_consultas] [ALOCAÇÃO] Consulta de Rotina AGENDADA: Walter_265 → Médico=Dr. Bruno Martins, Sala=Consultorio 10
+[14:51:03.942] [Dr. Bruno Martins] [ALLOCATION] Allocation ACCEPTED for Walter_265. Initiating consultation.
+[14:51:03.943] [Consultorio 10] [ALLOCATION] Allocation ACCEPTED for Walter_265
+[14:51:03.943] [supervisor] [SALA-ESPERA] Fila 'routine' atualizada (0 doentes).
+[14:51:03.944] [Dr. Bruno Martins] [CLÍNICA] A iniciar avaliação clínica a Walter_265...
+[14:51:03.944] [supervisor] [DASHBOARD] Dr. Bruno Martins -> OCUPADO(A) com walter_265@127.0.0.1
+[14:51:03.944] [supervisor] [DASHBOARD] Consultorio 10 -> OCUPADO(A) com walter_265@127.0.0.1
+--- SIMULATION PROGRESS: 10/300s ---
+[14:51:06.108] [Pedro_282] AgenteDoente initialized (type=Urgencia)
+[14:51:06.108] [Pedro_282] [PEDIDO] EMERGENCIA enviada para coord_triagem
+[14:51:06.108] [Pedro_282] [SUCESSO] Pedido enviado com sucesso.
+[14:51:06.108] [coord_triagem] [TRIAGEM] Pedido de urgencia recebido: Pedro_282
+[14:51:06.108] [supervisor] [SALA-ESPERA] Fila 'triage' atualizada (1 doentes).
+[14:51:06.109] [Dr. Tiago Pinto] [TRIAGEM] Proposta enviada para Pedro_282.
+[14:51:06.109] [Dra. Leonor Viana] [TRIAGEM] Proposta enviada para Pedro_282.
+[14:51:06.109] [Triagem 1] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:06.109] [Triagem 1] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:06.109] [Triagem 2] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:06.109] [Triagem 2] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:07.109] [coord_triagem] [TRIAGEM] Triagem alocada para Pedro_282.
+[14:51:07.110] [Triagem 2] [ALLOCATION] Allocation ACCEPTED for Pedro_282
+[14:51:07.110] [supervisor] [SALA-ESPERA] Fila 'triage' atualizada (0 doentes).
+[14:51:07.111] [Dra. Leonor Viana] [TRIAGEM] A classificar urgencia para Pedro_282.
+[14:51:07.111] [supervisor] [DASHBOARD] Triagem 2 -> OCUPADO(A) com pedro_282@127.0.0.1
+[14:51:07.111] [supervisor] [DASHBOARD] Dra. Leonor Viana -> OCUPADO(A) com pedro_282@127.0.0.1
+[14:51:07.248] [Pedro_287] AgenteDoente initialized (type=Normal)
+[14:51:07.248] [Pedro_287] [PEDIDO] Consulta de ROTINA para coord_consultas (esp=pediatria)
+[14:51:07.249] [Pedro_287] [SUCESSO] Pedido enviado com sucesso.
+[14:51:07.249] [coord_consultas] [PEDIDO] Pedido de consulta de rotina recebido: Pedro_287
+[14:51:07.249] [coord_consultas] [FILA] Doente Pedro_287 adicionado à fila de rotina (especialidade=pediatria, posição=1).
+[14:51:07.249] [coord_consultas] [FCFS] A tentar alocar cabeça da fila de pediatria: Pedro_287
+[14:51:07.249] [coord_consultas] [CONTRACT-NET] A iniciar negociação para Pedro_287...
+[14:51:07.249] [coord_consultas] [CFP] Call for Proposal enviado ao médico medico1@127.0.0.1
+[14:51:07.249] [coord_consultas] [CFP] Call for Proposal enviado ao médico medico8@127.0.0.1
+[14:51:07.249] [coord_consultas] [CFP] Call for Proposal enviado à sala sala1@127.0.0.1
+[14:51:07.249] [coord_consultas] [CFP] Call for Proposal enviado à sala sala2@127.0.0.1
+[14:51:07.249] [coord_consultas] [CFP] Call for Proposal enviado à sala sala3@127.0.0.1
+[14:51:07.249] [coord_consultas] [CFP] Call for Proposal enviado à sala sala4@127.0.0.1
+[14:51:07.249] [coord_consultas] [CFP] Call for Proposal enviado à sala sala5@127.0.0.1
+[14:51:07.250] [coord_consultas] [CFP] Call for Proposal enviado à sala sala6@127.0.0.1
+[14:51:07.250] [coord_consultas] [CFP] Call for Proposal enviado à sala sala7@127.0.0.1
+[14:51:07.250] [coord_consultas] [CFP] Call for Proposal enviado à sala sala8@127.0.0.1
+[14:51:07.250] [coord_consultas] [CFP] Call for Proposal enviado à sala sala9@127.0.0.1
+[14:51:07.250] [coord_consultas] [CFP] Call for Proposal enviado à sala sala10@127.0.0.1
+[14:51:07.251] [supervisor] [SALA-ESPERA] Fila 'routine' atualizada (1 doentes).
+[14:51:07.251] [Dr. Jose Silva] [CFP] Call for Proposal received for patient Pedro_287
+[14:51:07.251] [Dr. Jose Silva] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:07.251] [Dr. Paulo Rocha] [CFP] Call for Proposal received for patient Pedro_287
+[14:51:07.251] [Dr. Paulo Rocha] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:07.251] [Consultorio 1] [CFP] Call for Proposal received for patient Pedro_287
+[14:51:07.251] [Consultorio 1] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:07.252] [Consultorio 2] [CFP] Call for Proposal received for patient Pedro_287
+[14:51:07.252] [Consultorio 2] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:07.252] [Consultorio 3] [CFP] Call for Proposal received for patient Pedro_287
+[14:51:07.252] [Consultorio 3] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:07.252] [Consultorio 4] [CFP] Call for Proposal received for patient Pedro_287
+[14:51:07.252] [Consultorio 4] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:07.252] [Consultorio 5] [CFP] Call for Proposal received for patient Pedro_287
+[14:51:07.252] [Consultorio 5] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:07.252] [Consultorio 6] [CFP] Call for Proposal received for patient Pedro_287
+[14:51:07.252] [Consultorio 6] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:07.252] [Consultorio 7] [CFP] Call for Proposal received for patient Pedro_287
+[14:51:07.252] [Consultorio 7] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:07.252] [Consultorio 8] [CFP] Call for Proposal received for patient Pedro_287
+[14:51:07.252] [Consultorio 8] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:07.253] [Consultorio 9] [CFP] Call for Proposal received for patient Pedro_287
+[14:51:07.253] [Consultorio 9] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:07.253] [Consultorio 10] [CFP] Call for Proposal received for patient Pedro_287
+[14:51:07.253] [Consultorio 10] [PROPOSAL] CFP rejected (Status: Occupied).
+[14:51:09.017] [Walter_324] AgenteDoente initialized (type=Normal)
+[14:51:09.017] [Walter_324] [PEDIDO] Consulta de ROTINA para coord_consultas (esp=pediatria)
+[14:51:09.017] [Walter_324] [SUCESSO] Pedido enviado com sucesso.
+[14:51:09.112] [Dra. Leonor Viana] [TRIAGEM] Pedro_282 classificado com prioridade=3 e especialidade=ortopedia.
+[14:51:09.117] [coord_urgencias] [PEDIDO] Pedido triado de emergência recebido: Pedro_282 (prioridade=3)
+[14:51:09.117] [coord_urgencias] [A AGUARDAR] A aguardar confirmação de libertação de recursos do Supervisor...
+[14:51:09.118] [supervisor] [ALERTA-EMERGÊNCIA] Recebido alerta prioritário! Doente: Pedro_282 | Prioridade: 3
+[14:51:09.118] [supervisor] [PREEMPÇÃO] A despoletar protocolo dinâmico de preempção...
+[14:51:09.118] [supervisor] [PREEMPÇÃO] Diretiva de preempção enviada para coord_consultas.
+[14:51:09.119] [Triagem 2] [LIBERTAÇÃO] Procedimento concluído com sucesso. Instalação livre (doente anterior: pedro_282@127.0.0.1).
+[14:51:09.119] [supervisor] [DASHBOARD] Dra. Leonor Viana -> LIVRE
+[14:51:09.119] [supervisor] [SALA-ESPERA] Fila 'emergency' atualizada (1 doentes).
+[14:51:09.120] [supervisor] [DASHBOARD] Triagem 2 -> LIVRE
+[14:51:09.250] [coord_consultas] Proposta de médico recebida: Dr. Jose Silva
+[14:51:09.251] [coord_consultas] Proposta de médico recebida: Dr. Paulo Rocha
+[14:51:09.251] [coord_consultas] Proposta de sala recebida: Consultorio 1
+[14:51:09.251] [coord_consultas] Proposta de sala recebida: Consultorio 2
+[14:51:09.251] [coord_consultas] Proposta de sala recebida: Consultorio 3
+[14:51:09.251] [coord_consultas] Proposta de sala recebida: Consultorio 4
+[14:51:09.251] [coord_consultas] Proposta de sala recebida: Consultorio 5
+[14:51:09.251] [coord_consultas] Proposta de sala recebida: Consultorio 6
+[14:51:09.251] [coord_consultas] Proposta de sala recebida: Consultorio 7
+[14:51:09.251] [coord_consultas] Proposta de sala recebida: Consultorio 8
+[14:51:09.251] [coord_consultas] Proposta de sala recebida: Consultorio 9
+[14:51:09.251] [coord_consultas] [PROPOSTA] Proposta rejeitada: Room occupied logically.
+[14:51:09.251] [coord_consultas] [ALOCAÇÃO] Consulta de Rotina AGENDADA: Pedro_287 → Médico=Dr. Paulo Rocha, Sala=Consultorio 9
+[14:51:09.251] [coord_consultas] [PEDIDO] Pedido de consulta de rotina recebido: Walter_324
+[14:51:09.251] [coord_consultas] [FILA] Doente Walter_324 adicionado à fila de rotina (especialidade=pediatria, posição=1).
+[14:51:09.251] [coord_consultas] [FCFS] A tentar alocar cabeça da fila de pediatria: Walter_324
+[14:51:09.251] [coord_consultas] [CONTRACT-NET] A iniciar negociação para Walter_324...
+[14:51:09.252] [coord_consultas] [CFP] Call for Proposal enviado ao médico medico1@127.0.0.1
+[14:51:09.252] [coord_consultas] [CFP] Call for Proposal enviado ao médico medico8@127.0.0.1
+[14:51:09.252] [coord_consultas] [CFP] Call for Proposal enviado à sala sala1@127.0.0.1
+[14:51:09.252] [coord_consultas] [CFP] Call for Proposal enviado à sala sala2@127.0.0.1
+[14:51:09.252] [coord_consultas] [CFP] Call for Proposal enviado à sala sala3@127.0.0.1
+[14:51:09.252] [coord_consultas] [CFP] Call for Proposal enviado à sala sala4@127.0.0.1
+[14:51:09.252] [coord_consultas] [CFP] Call for Proposal enviado à sala sala5@127.0.0.1
+[14:51:09.252] [coord_consultas] [CFP] Call for Proposal enviado à sala sala6@127.0.0.1
+[14:51:09.252] [coord_consultas] [CFP] Call for Proposal enviado à sala sala7@127.0.0.1
+[14:51:09.252] [coord_consultas] [CFP] Call for Proposal enviado à sala sala8@127.0.0.1
+[14:51:09.252] [coord_consultas] [CFP] Call for Proposal enviado à sala sala9@127.0.0.1
+[14:51:09.252] [coord_consultas] [CFP] Call for Proposal enviado à sala sala10@127.0.0.1
+[14:51:09.252] [Dr. Paulo Rocha] [ALLOCATION] Allocation ACCEPTED for Pedro_287. Initiating consultation.
+[14:51:09.252] [Consultorio 9] [ALLOCATION] Allocation ACCEPTED for Pedro_287
+[14:51:09.253] [supervisor] [SALA-ESPERA] Fila 'routine' atualizada (0 doentes).
+[14:51:09.253] [Dr. Paulo Rocha] [CLÍNICA] A iniciar avaliação clínica a Pedro_287...
+[14:51:09.253] [Dr. Paulo Rocha] [CFP] Call for Proposal received for patient Walter_324
+[14:51:09.253] [Dr. Paulo Rocha] [PROPOSAL] CFP rejected (Status: Occupied).
+[14:51:09.253] [Consultorio 9] [CFP] Call for Proposal received for patient Walter_324
+[14:51:09.253] [Consultorio 9] [PROPOSAL] CFP rejected (Status: Occupied).
+[14:51:09.253] [supervisor] [SALA-ESPERA] Fila 'routine' atualizada (1 doentes).
+[14:51:09.254] [Dr. Jose Silva] [CFP] Call for Proposal received for patient Walter_324
+[14:51:09.254] [Dr. Jose Silva] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:09.254] [Consultorio 1] [CFP] Call for Proposal received for patient Walter_324
+[14:51:09.254] [Consultorio 1] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:09.254] [Consultorio 2] [CFP] Call for Proposal received for patient Walter_324
+[14:51:09.254] [Consultorio 2] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:09.254] [Consultorio 3] [CFP] Call for Proposal received for patient Walter_324
+[14:51:09.254] [Consultorio 3] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:09.254] [Consultorio 4] [CFP] Call for Proposal received for patient Walter_324
+[14:51:09.254] [Consultorio 4] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:09.254] [Consultorio 5] [CFP] Call for Proposal received for patient Walter_324
+[14:51:09.254] [Consultorio 5] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:09.255] [Consultorio 6] [CFP] Call for Proposal received for patient Walter_324
+[14:51:09.255] [Consultorio 6] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:09.255] [Consultorio 7] [CFP] Call for Proposal received for patient Walter_324
+[14:51:09.255] [Consultorio 7] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:09.255] [Consultorio 8] [CFP] Call for Proposal received for patient Walter_324
+[14:51:09.255] [Consultorio 8] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:09.255] [Consultorio 10] [CFP] Call for Proposal received for patient Walter_324
+[14:51:09.255] [Consultorio 10] [PROPOSAL] CFP rejected (Status: Occupied).
+[14:51:09.255] [supervisor] [DASHBOARD] Dr. Paulo Rocha -> OCUPADO(A) com pedro_287@127.0.0.1
+[14:51:09.256] [supervisor] [DASHBOARD] Consultorio 9 -> OCUPADO(A) com pedro_287@127.0.0.1
+--- SIMULATION PROGRESS: 15/300s ---
+[14:51:11.252] [coord_consultas] [PRIORIDADE] Via de rotina agora: BLOQUEADA
+[14:51:11.253] [coord_consultas] ⚠️  ORDEM DE PREEMPTION recebida do Supervisor! Motivo: urgência de Pedro_282
+[14:51:11.253] [coord_consultas] [PREEMPÇÃO] A cancelar alocação de rotina de Walter_265 para libertar recursos...
+[14:51:11.253] [coord_consultas] [PREEMPTION] Cancellation dispatched. Doente Walter_265 será reagendado.
+[14:51:11.253] [Dr. Bruno Martins] [PREEMPTION] Preemption triggered. Resource freed (previous patient ID: walter_265@127.0.0.1).
+[14:51:11.254] [Consultorio 10] [PREEMPTION] Preemption triggered. Resource freed (previous patient ID: walter_265@127.0.0.1).
+[14:51:11.254] [supervisor] [SALA-ESPERA] Fila 'routine' atualizada (2 doentes).
+[14:51:11.255] [supervisor] [DASHBOARD] Dr. Bruno Martins -> LIVRE
+[14:51:11.255] [coord_consultas] [PREEMPÇÃO] Recursos libertados com sucesso e supervisor notificado.
+[14:51:11.255] [supervisor] [DASHBOARD] Consultorio 10 -> LIVRE
+[14:51:11.256] [supervisor] [PREEMPÇÃO-SUCESSO] Recursos libertados com sucesso por preempção.
+[14:51:11.256] [supervisor] [PREEMPÇÃO-SUCESSO] Coordenador de urgências notificado da disponibilidade.
+[14:51:11.256] [coord_urgencias] [NOTIFICAÇÃO] Confirmação de preempção recebida do Supervisor.
+[14:51:11.256] [coord_urgencias] [CONTRACT-NET] A iniciar negociação de EMERGÊNCIA para Pedro_282...
+[14:51:11.257] [coord_urgencias] [CFP] CFP de Emergência enviado para medico2@127.0.0.1
+[14:51:11.257] [coord_urgencias] [CFP] CFP de Emergência enviado para medico9@127.0.0.1
+[14:51:11.257] [coord_urgencias] [CFP] CFP de Emergência enviado para sala1@127.0.0.1
+[14:51:11.257] [coord_urgencias] [CFP] CFP de Emergência enviado para sala2@127.0.0.1
+[14:51:11.257] [coord_urgencias] [CFP] CFP de Emergência enviado para sala3@127.0.0.1
+[14:51:11.257] [coord_urgencias] [CFP] CFP de Emergência enviado para sala4@127.0.0.1
+[14:51:11.258] [coord_urgencias] [CFP] CFP de Emergência enviado para sala5@127.0.0.1
+[14:51:11.258] [coord_urgencias] [CFP] CFP de Emergência enviado para sala6@127.0.0.1
+[14:51:11.258] [coord_urgencias] [CFP] CFP de Emergência enviado para sala7@127.0.0.1
+[14:51:11.258] [coord_urgencias] [CFP] CFP de Emergência enviado para sala8@127.0.0.1
+[14:51:11.258] [coord_urgencias] [CFP] CFP de Emergência enviado para sala9@127.0.0.1
+[14:51:11.259] [coord_urgencias] [CFP] CFP de Emergência enviado para sala10@127.0.0.1
+[14:51:11.259] [Dra. Beatriz Santos] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:11.259] [Dra. Beatriz Santos] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:11.260] [Dra. Rita Goncalves] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:11.260] [Dra. Rita Goncalves] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:11.260] [Consultorio 1] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:11.260] [Consultorio 1] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:11.260] [Consultorio 2] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:11.260] [Consultorio 2] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:11.260] [Consultorio 3] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:11.260] [Consultorio 3] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:11.260] [Consultorio 4] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:11.260] [Consultorio 4] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:11.260] [Consultorio 5] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:11.260] [Consultorio 5] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:11.260] [Consultorio 6] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:11.260] [Consultorio 6] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:11.260] [Consultorio 7] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:11.260] [Consultorio 7] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:11.261] [Consultorio 8] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:11.261] [Consultorio 8] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:11.261] [Consultorio 9] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:11.261] [Consultorio 9] [PROPOSAL] CFP rejected (Status: Occupied).
+[14:51:11.261] [Consultorio 10] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:11.261] [Consultorio 10] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:13.260] [coord_urgencias] [PROPOSTA] Proposta recebida de: Dra. Beatriz Santos
+[14:51:13.260] [coord_urgencias] [PROPOSTA] Proposta recebida de: Dra. Rita Goncalves
+[14:51:13.260] [coord_urgencias] [PROPOSTA] Proposta recebida de: Consultorio 1
+[14:51:13.260] [coord_urgencias] [PROPOSTA] Proposta recebida de: Consultorio 2
+[14:51:13.260] [coord_urgencias] [PROPOSTA] Proposta recebida de: Consultorio 3
+[14:51:13.260] [coord_urgencias] [PROPOSTA] Proposta recebida de: Consultorio 4
+[14:51:13.260] [coord_urgencias] [PROPOSTA] Proposta recebida de: Consultorio 5
+[14:51:13.260] [coord_urgencias] [PROPOSTA] Proposta recebida de: Consultorio 6
+[14:51:13.260] [coord_urgencias] [PROPOSTA] Proposta recebida de: Consultorio 7
+[14:51:13.260] [coord_urgencias] [PROPOSTA] Proposta recebida de: Consultorio 8
+[14:51:13.260] [coord_urgencias] [PROPOSTA] Proposta rejeitada: Room occupied logically.
+[14:51:13.260] [coord_urgencias] [PROPOSTA] Proposta recebida de: Consultorio 10
+[14:51:13.260] [coord_urgencias] [ALOCAÇÃO] EMERGÊNCIA AGENDADA: Pedro_282 → Médico=Dra. Rita Goncalves, Sala=Consultorio 10
+[14:51:13.261] [Dra. Rita Goncalves] [ALLOCATION] Allocation ACCEPTED for Pedro_282. Initiating consultation.
+[14:51:13.261] [Consultorio 10] [ALLOCATION] Allocation ACCEPTED for Pedro_282
+[14:51:13.261] [supervisor] [SALA-ESPERA] Fila 'emergency' atualizada (0 doentes).
+[14:51:13.261] [coord_consultas] [PRIORIDADE] Via de rotina agora: ATIVA
+[14:51:13.261] [Dra. Rita Goncalves] [CLÍNICA] A iniciar avaliação clínica a Pedro_282...
+[14:51:13.261] [supervisor] [DASHBOARD] Dra. Rita Goncalves -> OCUPADO(A) com pedro_282@127.0.0.1
+[14:51:13.261] [supervisor] [DASHBOARD] Consultorio 10 -> OCUPADO(A) com pedro_282@127.0.0.1
+--- SIMULATION PROGRESS: 20/300s ---
+[14:51:17.262] [Dra. Rita Goncalves] [CLÍNICA] Gravidade clínica detetada para Pedro_282. A solicitar MCDT (tac).
+[14:51:17.262] [Dra. Rita Goncalves] [TRANSITO] Pedro_282 encaminhado para diagnóstico. A libertar Consultório para novo uso.
+[14:51:17.262] [coord_exames] [PEDIDO] Pedido de diagnóstico MCDT recebido para: Pedro_282
+[14:51:17.262] [coord_exames] [CONTRACT-NET] A iniciar negociação de DIAGNÓSTICO para Pedro_282 (esp=tac)...
+[14:51:17.262] [coord_exames] [CFP] CFP enviado para equipamento sala_tac1@127.0.0.1
+[14:51:17.262] [coord_exames] [CFP] CFP enviado para equipamento sala_tac2@127.0.0.1
+[14:51:17.262] [coord_exames] [CFP] CFP enviado para médico de exame medico6@127.0.0.1
+[14:51:17.263] [coord_exames] [CFP] CFP enviado para médico de exame medico12@127.0.0.1
+[14:51:17.263] [Consultorio 10] [LIBERTAÇÃO] Procedimento concluído com sucesso. Instalação livre (doente anterior: pedro_282@127.0.0.1).
+[14:51:17.263] [Sala de TAC 1] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:17.263] [Sala de TAC 1] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:17.263] [Sala de TAC 2] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:17.263] [Sala de TAC 2] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:17.263] [Dr. Hugo Ribeiro] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:17.263] [Dr. Hugo Ribeiro] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:17.264] [Dr. Andre Lopes] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:17.264] [Dr. Andre Lopes] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:17.264] [supervisor] [DASHBOARD] Consultorio 10 -> LIVRE
+[14:51:17.454] [Carla_900] AgenteDoente initialized (type=Normal)
+[14:51:17.455] [Carla_900] [PEDIDO] Consulta de ROTINA para coord_consultas (esp=pediatria)
+[14:51:17.455] [Carla_900] [SUCESSO] Pedido enviado com sucesso.
+[14:51:17.455] [coord_consultas] [FILA] Doente Carla_900 adicionado à fila de rotina (especialidade=pediatria, posição=2).
+[14:51:17.456] [supervisor] [SALA-ESPERA] Fila 'routine' atualizada (3 doentes).
+[14:51:19.034] [Elena_450] AgenteDoente initialized (type=Normal)
+[14:51:19.034] [Elena_450] [PEDIDO] Consulta de ROTINA para coord_consultas (esp=pediatria)
+[14:51:19.034] [Elena_450] [SUCESSO] Pedido enviado com sucesso.
+[14:51:19.034] [coord_consultas] [FILA] Doente Elena_450 adicionado à fila de rotina (especialidade=pediatria, posição=3).
+[14:51:19.035] [supervisor] [SALA-ESPERA] Fila 'routine' atualizada (4 doentes).
+[14:51:19.262] [coord_exames] [PROPOSTA] Proposta de equipamento: Sala de TAC 1
+[14:51:19.262] [coord_exames] [PROPOSTA] Proposta de equipamento: Sala de TAC 2
+[14:51:19.262] [coord_exames] [PROPOSTA] Proposta de médico: Dr. Hugo Ribeiro
+[14:51:19.262] [coord_exames] [PROPOSTA] Proposta de médico: Dr. Andre Lopes
+[14:51:19.262] [coord_exames] [ALOCAÇÃO] DIAGNÓSTICO AGENDADO: Pedro_282 → Equipamento=Sala de TAC 2, Médico=Dr. Andre Lopes
+[14:51:19.263] [Sala de TAC 2] [ALLOCATION] Allocation ACCEPTED for Pedro_282
+[14:51:19.264] [Dr. Andre Lopes] [ALLOCATION] Exam Allocation ACCEPTED for Pedro_282. Initiating exam.
+[14:51:19.264] [Dra. Rita Goncalves] [SYNC] Confirmation: Equipment sala_tac2@127.0.0.1 locked for exam.
+[14:51:19.264] [supervisor] [DASHBOARD] Sala de TAC 2 -> OCUPADO(A) com pedro_282@127.0.0.1
+[14:51:19.264] [supervisor] [DASHBOARD] Dr. Andre Lopes -> OCUPADO(A) com pedro_282@127.0.0.1
+--- SIMULATION PROGRESS: 25/300s ---
+[14:51:20.411] [Pedro_708] AgenteDoente initialized (type=Urgencia)
+[14:51:20.411] [Pedro_708] [PEDIDO] EMERGENCIA enviada para coord_triagem
+[14:51:20.412] [Pedro_708] [SUCESSO] Pedido enviado com sucesso.
+[14:51:20.412] [coord_triagem] [TRIAGEM] Pedido de urgencia recebido: Pedro_708
+[14:51:20.413] [supervisor] [SALA-ESPERA] Fila 'triage' atualizada (1 doentes).
+[14:51:20.413] [Dr. Tiago Pinto] [TRIAGEM] Proposta enviada para Pedro_708.
+[14:51:20.413] [Dra. Leonor Viana] [TRIAGEM] Proposta enviada para Pedro_708.
+[14:51:20.413] [Triagem 1] [CFP] Call for Proposal received for patient Pedro_708
+[14:51:20.413] [Triagem 1] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:20.413] [Triagem 2] [CFP] Call for Proposal received for patient Pedro_708
+[14:51:20.413] [Triagem 2] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:21.413] [coord_triagem] [TRIAGEM] Triagem alocada para Pedro_708.
+[14:51:21.413] [Triagem 2] [ALLOCATION] Allocation ACCEPTED for Pedro_708
+[14:51:21.413] [supervisor] [SALA-ESPERA] Fila 'triage' atualizada (0 doentes).
+[14:51:21.414] [Dra. Leonor Viana] [TRIAGEM] A classificar urgencia para Pedro_708.
+[14:51:21.414] [supervisor] [DASHBOARD] Triagem 2 -> OCUPADO(A) com pedro_708@127.0.0.1
+[14:51:21.414] [supervisor] [DASHBOARD] Dra. Leonor Viana -> OCUPADO(A) com pedro_708@127.0.0.1
+[14:51:23.262] [Dra. Rita Goncalves] [CLÍNICA] Resultados de diagnóstico para Pedro_282 normais. Alta médica concedida.
+[14:51:23.262] [Sala de TAC 2] [LIBERTAÇÃO] Procedimento concluído com sucesso. Instalação livre (doente anterior: pedro_282@127.0.0.1).
+[14:51:23.262] [supervisor] [DASHBOARD] Dra. Rita Goncalves -> LIVRE
+[14:51:23.263] [supervisor] [DASHBOARD] Sala de TAC 2 -> LIVRE
+[14:51:23.414] [Dra. Leonor Viana] [TRIAGEM] Pedro_708 classificado com prioridade=0 e especialidade=ortopedia.
+[14:51:23.415] [coord_urgencias] [PEDIDO] Pedido triado de emergência recebido: Pedro_708 (prioridade=0)
+[14:51:23.416] [coord_urgencias] [A AGUARDAR] A aguardar confirmação de libertação de recursos do Supervisor...
+[14:51:23.416] [supervisor] [ALERTA-EMERGÊNCIA] Recebido alerta prioritário! Doente: Pedro_708 | Prioridade: 0
+[14:51:23.416] [supervisor] [PREEMPÇÃO] A despoletar protocolo dinâmico de preempção...
+[14:51:23.417] [supervisor] [PREEMPÇÃO] Diretiva de preempção enviada para coord_consultas.
+[14:51:23.417] [Triagem 2] [LIBERTAÇÃO] Procedimento concluído com sucesso. Instalação livre (doente anterior: pedro_708@127.0.0.1).
+[14:51:23.417] [supervisor] [DASHBOARD] Dra. Leonor Viana -> LIVRE
+[14:51:23.418] [supervisor] [SALA-ESPERA] Fila 'emergency' atualizada (1 doentes).
+[14:51:23.418] [coord_consultas] [PRIORIDADE] Via de rotina agora: BLOQUEADA
+[14:51:23.418] [coord_consultas] ⚠️  ORDEM DE PREEMPTION recebida do Supervisor! Motivo: urgência de Pedro_708
+[14:51:23.418] [coord_consultas] [PREEMPÇÃO] A cancelar alocação de rotina de Pedro_287 para libertar recursos...
+[14:51:23.419] [coord_consultas] [PREEMPTION] Cancellation dispatched. Doente Pedro_287 será reagendado.
+[14:51:23.419] [supervisor] [DASHBOARD] Triagem 2 -> LIVRE
+[14:51:23.420] [Dr. Paulo Rocha] [PREEMPTION] Preemption triggered. Resource freed (previous patient ID: pedro_287@127.0.0.1).
+[14:51:23.420] [Consultorio 9] [PREEMPTION] Preemption triggered. Resource freed (previous patient ID: pedro_287@127.0.0.1).
+[14:51:23.420] [supervisor] [SALA-ESPERA] Fila 'routine' atualizada (5 doentes).
+[14:51:23.421] [supervisor] [DASHBOARD] Dr. Paulo Rocha -> LIVRE
+[14:51:23.422] [coord_consultas] [PREEMPÇÃO] Recursos libertados com sucesso e supervisor notificado.
+[14:51:23.422] [supervisor] [DASHBOARD] Consultorio 9 -> LIVRE
+[14:51:23.422] [supervisor] [PREEMPÇÃO-SUCESSO] Recursos libertados com sucesso por preempção.
+[14:51:23.423] [supervisor] [PREEMPÇÃO-SUCESSO] Coordenador de urgências notificado da disponibilidade.
+[14:51:23.423] [coord_urgencias] [NOTIFICAÇÃO] Confirmação de preempção recebida do Supervisor.
+[14:51:23.424] [coord_urgencias] [CONTRACT-NET] A iniciar negociação de EMERGÊNCIA para Pedro_708...
+[14:51:23.424] [coord_urgencias] [CFP] CFP de Emergência enviado para medico2@127.0.0.1
+[14:51:23.424] [coord_urgencias] [CFP] CFP de Emergência enviado para medico9@127.0.0.1
+[14:51:23.424] [coord_urgencias] [CFP] CFP de Emergência enviado para sala1@127.0.0.1
+[14:51:23.424] [coord_urgencias] [CFP] CFP de Emergência enviado para sala2@127.0.0.1
+[14:51:23.424] [coord_urgencias] [CFP] CFP de Emergência enviado para sala3@127.0.0.1
+[14:51:23.424] [coord_urgencias] [CFP] CFP de Emergência enviado para sala4@127.0.0.1
+[14:51:23.425] [coord_urgencias] [CFP] CFP de Emergência enviado para sala5@127.0.0.1
+[14:51:23.425] [coord_urgencias] [CFP] CFP de Emergência enviado para sala6@127.0.0.1
+[14:51:23.425] [coord_urgencias] [CFP] CFP de Emergência enviado para sala7@127.0.0.1
+[14:51:23.425] [coord_urgencias] [CFP] CFP de Emergência enviado para sala8@127.0.0.1
+[14:51:23.425] [coord_urgencias] [CFP] CFP de Emergência enviado para sala9@127.0.0.1
+[14:51:23.425] [coord_urgencias] [CFP] CFP de Emergência enviado para sala10@127.0.0.1
+[14:51:23.425] [Dra. Beatriz Santos] [CFP] Call for Proposal received for patient Pedro_708
+[14:51:23.425] [Dra. Beatriz Santos] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:23.426] [Dra. Rita Goncalves] [CFP] Call for Proposal received for patient Pedro_708
+[14:51:23.426] [Dra. Rita Goncalves] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:23.426] [Consultorio 1] [CFP] Call for Proposal received for patient Pedro_708
+[14:51:23.426] [Consultorio 1] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:23.426] [Consultorio 2] [CFP] Call for Proposal received for patient Pedro_708
+[14:51:23.426] [Consultorio 2] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:23.426] [Consultorio 3] [CFP] Call for Proposal received for patient Pedro_708
+[14:51:23.427] [Consultorio 3] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:23.427] [Consultorio 4] [CFP] Call for Proposal received for patient Pedro_708
+[14:51:23.427] [Consultorio 4] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:23.427] [Consultorio 5] [CFP] Call for Proposal received for patient Pedro_708
+[14:51:23.427] [Consultorio 5] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:23.427] [Consultorio 6] [CFP] Call for Proposal received for patient Pedro_708
+[14:51:23.427] [Consultorio 6] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:23.427] [Consultorio 7] [CFP] Call for Proposal received for patient Pedro_708
+[14:51:23.427] [Consultorio 7] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:23.427] [Consultorio 8] [CFP] Call for Proposal received for patient Pedro_708
+[14:51:23.427] [Consultorio 8] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:23.427] [Consultorio 9] [CFP] Call for Proposal received for patient Pedro_708
+[14:51:23.428] [Consultorio 9] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:23.428] [Consultorio 10] [CFP] Call for Proposal received for patient Pedro_708
+[14:51:23.428] [Consultorio 10] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:24.264] [coord_exames] [CONTRACT-NET] A iniciar negociação de DIAGNÓSTICO para Pedro_282 (esp=tac)...
+[14:51:24.264] [coord_exames] [CFP] CFP enviado para equipamento sala_tac1@127.0.0.1
+[14:51:24.265] [coord_exames] [CFP] CFP enviado para equipamento sala_tac2@127.0.0.1
+[14:51:24.265] [coord_exames] [CFP] CFP enviado para médico de exame medico6@127.0.0.1
+[14:51:24.265] [coord_exames] [CFP] CFP enviado para médico de exame medico12@127.0.0.1
+[14:51:24.265] [Dr. Andre Lopes] [EXAME] Exame concluido para Pedro_282.
+[14:51:24.266] [Sala de TAC 1] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:24.267] [Sala de TAC 1] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:24.267] [Sala de TAC 2] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:24.267] [Sala de TAC 2] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:24.267] [Dr. Hugo Ribeiro] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:24.267] [Dr. Hugo Ribeiro] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:24.268] [Dr. Andre Lopes] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:24.268] [Dr. Andre Lopes] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:24.268] [supervisor] [DASHBOARD] Dr. Andre Lopes -> LIVRE
+[14:51:24.269] [Sala de TAC 2] [LIBERTAÇÃO] Procedimento concluído com sucesso. Instalação livre (doente anterior: None).
+[14:51:24.269] [supervisor] [DASHBOARD] Sala de TAC 2 -> LIVRE
+--- SIMULATION PROGRESS: 30/300s ---
+[14:51:24.986] [Tiago_247] AgenteDoente initialized (type=Normal)
+[14:51:24.986] [Tiago_247] [PEDIDO] Consulta de ROTINA para coord_consultas (esp=cardiologia)
+[14:51:24.987] [Tiago_247] [SUCESSO] Pedido enviado com sucesso.
+[14:51:24.987] [coord_consultas] [FILA] Doente Tiago_247 adicionado à fila de rotina (especialidade=cardiologia, posição=2).
+[14:51:24.987] [supervisor] [SALA-ESPERA] Fila 'routine' atualizada (6 doentes).
+[14:51:25.425] [coord_urgencias] [PROPOSTA] Proposta recebida de: Dra. Beatriz Santos
+[14:51:25.425] [coord_urgencias] [PROPOSTA] Proposta recebida de: Dra. Rita Goncalves
+[14:51:25.425] [coord_urgencias] [PROPOSTA] Proposta recebida de: Consultorio 1
+[14:51:25.425] [coord_urgencias] [PROPOSTA] Proposta recebida de: Consultorio 2
+[14:51:25.426] [coord_urgencias] [PROPOSTA] Proposta recebida de: Consultorio 3
+[14:51:25.426] [coord_urgencias] [PROPOSTA] Proposta recebida de: Consultorio 4
+[14:51:25.426] [coord_urgencias] [PROPOSTA] Proposta recebida de: Consultorio 5
+[14:51:25.426] [coord_urgencias] [PROPOSTA] Proposta recebida de: Consultorio 6
+[14:51:25.426] [coord_urgencias] [PROPOSTA] Proposta recebida de: Consultorio 7
+[14:51:25.426] [coord_urgencias] [PROPOSTA] Proposta recebida de: Consultorio 8
+[14:51:25.426] [coord_urgencias] [PROPOSTA] Proposta recebida de: Consultorio 9
+[14:51:25.426] [coord_urgencias] [PROPOSTA] Proposta recebida de: Consultorio 10
+[14:51:25.426] [coord_urgencias] [ALOCAÇÃO] EMERGÊNCIA AGENDADA: Pedro_708 → Médico=Dra. Rita Goncalves, Sala=Consultorio 10
+[14:51:25.426] [Dra. Rita Goncalves] [ALLOCATION] Allocation ACCEPTED for Pedro_708. Initiating consultation.
+[14:51:25.427] [Consultorio 10] [ALLOCATION] Allocation ACCEPTED for Pedro_708
+[14:51:25.427] [supervisor] [SALA-ESPERA] Fila 'emergency' atualizada (0 doentes).
+[14:51:25.427] [coord_consultas] [PRIORIDADE] Via de rotina agora: ATIVA
+[14:51:25.427] [Dra. Rita Goncalves] [CLÍNICA] A iniciar avaliação clínica a Pedro_708...
+[14:51:25.427] [supervisor] [DASHBOARD] Dra. Rita Goncalves -> OCUPADO(A) com pedro_708@127.0.0.1
+[14:51:25.427] [supervisor] [DASHBOARD] Consultorio 10 -> OCUPADO(A) com pedro_708@127.0.0.1
+[14:51:26.266] [coord_exames] [PROPOSTA] Proposta de equipamento: Sala de TAC 1
+[14:51:26.266] [coord_exames] [PROPOSTA] Proposta de equipamento: Sala de TAC 2
+[14:51:26.266] [coord_exames] [PROPOSTA] Proposta de médico: Dr. Hugo Ribeiro
+[14:51:26.266] [coord_exames] [PROPOSTA] Proposta de médico: Dr. Andre Lopes
+[14:51:26.267] [coord_exames] [ALOCAÇÃO] DIAGNÓSTICO AGENDADO: Pedro_282 → Equipamento=Sala de TAC 2, Médico=Dr. Andre Lopes
+[14:51:26.267] [Sala de TAC 2] [ALLOCATION] Allocation ACCEPTED for Pedro_282
+[14:51:26.267] [Dr. Andre Lopes] [ALLOCATION] Exam Allocation ACCEPTED for Pedro_282. Initiating exam.
+[14:51:26.268] [Dra. Rita Goncalves] [SYNC] Confirmation: Equipment sala_tac2@127.0.0.1 locked for exam.
+[14:51:26.268] [supervisor] [DASHBOARD] Sala de TAC 2 -> OCUPADO(A) com pedro_282@127.0.0.1
+[14:51:26.269] [supervisor] [DASHBOARD] Dr. Andre Lopes -> OCUPADO(A) com pedro_282@127.0.0.1
+[14:51:28.406] [Bernardo_177] AgenteDoente initialized (type=Normal)
+[14:51:28.406] [Bernardo_177] [PEDIDO] Consulta de ROTINA para coord_consultas (esp=ortopedia)
+[14:51:28.406] [Bernardo_177] [SUCESSO] Pedido enviado com sucesso.
+[14:51:28.406] [coord_consultas] [FILA] Doente Bernardo_177 adicionado à fila de rotina (especialidade=ortopedia, posição=1).
+[14:51:28.406] [coord_consultas] [ALOCAÇÃO-FALHOU] Impossível agendar consulta de rotina a Walter_324 (recursos indisponíveis). Pedido pendente.
+[14:51:28.406] [coord_consultas] [FCFS] Doente mantém-se em espera (pediatria): Walter_324
+[14:51:28.406] [coord_consultas] [FCFS] A tentar alocar cabeça da fila de ortopedia: Bernardo_177
+[14:51:28.406] [coord_consultas] [CONTRACT-NET] A iniciar negociação para Bernardo_177...
+[14:51:28.406] [coord_consultas] [CFP] Call for Proposal enviado ao médico medico2@127.0.0.1
+[14:51:28.406] [coord_consultas] [CFP] Call for Proposal enviado ao médico medico9@127.0.0.1
+[14:51:28.406] [coord_consultas] [CFP] Call for Proposal enviado à sala sala1@127.0.0.1
+[14:51:28.407] [coord_consultas] [CFP] Call for Proposal enviado à sala sala2@127.0.0.1
+[14:51:28.407] [coord_consultas] [CFP] Call for Proposal enviado à sala sala3@127.0.0.1
+[14:51:28.407] [coord_consultas] [CFP] Call for Proposal enviado à sala sala4@127.0.0.1
+[14:51:28.407] [coord_consultas] [CFP] Call for Proposal enviado à sala sala5@127.0.0.1
+[14:51:28.407] [coord_consultas] [CFP] Call for Proposal enviado à sala sala6@127.0.0.1
+[14:51:28.407] [coord_consultas] [CFP] Call for Proposal enviado à sala sala7@127.0.0.1
+[14:51:28.407] [coord_consultas] [CFP] Call for Proposal enviado à sala sala8@127.0.0.1
+[14:51:28.407] [coord_consultas] [CFP] Call for Proposal enviado à sala sala9@127.0.0.1
+[14:51:28.407] [coord_consultas] [CFP] Call for Proposal enviado à sala sala10@127.0.0.1
+[14:51:28.408] [supervisor] [SALA-ESPERA] Fila 'routine' atualizada (7 doentes).
+[14:51:28.408] [Dra. Beatriz Santos] [CFP] Call for Proposal received for patient Bernardo_177
+[14:51:28.408] [Dra. Beatriz Santos] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:28.408] [Dra. Rita Goncalves] [CFP] Call for Proposal received for patient Bernardo_177
+[14:51:28.408] [Dra. Rita Goncalves] [PROPOSAL] CFP rejected (Status: Occupied).
+[14:51:28.409] [Consultorio 1] [CFP] Call for Proposal received for patient Bernardo_177
+[14:51:28.409] [Consultorio 1] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:28.409] [Consultorio 2] [CFP] Call for Proposal received for patient Bernardo_177
+[14:51:28.409] [Consultorio 2] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:28.409] [Consultorio 3] [CFP] Call for Proposal received for patient Bernardo_177
+[14:51:28.409] [Consultorio 3] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:28.409] [Consultorio 4] [CFP] Call for Proposal received for patient Bernardo_177
+[14:51:28.409] [Consultorio 4] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:28.409] [Consultorio 5] [CFP] Call for Proposal received for patient Bernardo_177
+[14:51:28.409] [Consultorio 5] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:28.409] [Consultorio 6] [CFP] Call for Proposal received for patient Bernardo_177
+[14:51:28.409] [Consultorio 6] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:28.409] [Consultorio 7] [CFP] Call for Proposal received for patient Bernardo_177
+[14:51:28.409] [Consultorio 7] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:28.409] [Consultorio 8] [CFP] Call for Proposal received for patient Bernardo_177
+[14:51:28.409] [Consultorio 8] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:28.409] [Consultorio 9] [CFP] Call for Proposal received for patient Bernardo_177
+[14:51:28.409] [Consultorio 9] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:28.409] [Consultorio 10] [CFP] Call for Proposal received for patient Bernardo_177
+[14:51:28.409] [Consultorio 10] [PROPOSAL] CFP rejected (Status: Occupied).
+[14:51:29.428] [Dra. Rita Goncalves] [CLÍNICA] Gravidade clínica detetada para Pedro_708. A solicitar MCDT (tac).
+[14:51:29.428] [Dra. Rita Goncalves] [TRANSITO] Pedro_708 encaminhado para diagnóstico. A libertar Consultório para novo uso.
+[14:51:29.428] [coord_exames] [PEDIDO] Pedido de diagnóstico MCDT recebido para: Pedro_708
+[14:51:29.428] [coord_exames] [CONTRACT-NET] A iniciar negociação de DIAGNÓSTICO para Pedro_282 (esp=tac)...
+[14:51:29.428] [coord_exames] [CFP] CFP enviado para equipamento sala_tac1@127.0.0.1
+[14:51:29.429] [coord_exames] [CFP] CFP enviado para equipamento sala_tac2@127.0.0.1
+[14:51:29.429] [coord_exames] [CFP] CFP enviado para médico de exame medico6@127.0.0.1
+[14:51:29.429] [coord_exames] [CFP] CFP enviado para médico de exame medico12@127.0.0.1
+[14:51:29.429] [Consultorio 10] [LIBERTAÇÃO] Procedimento concluído com sucesso. Instalação livre (doente anterior: pedro_708@127.0.0.1).
+[14:51:29.429] [Sala de TAC 1] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:29.429] [Sala de TAC 1] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:29.430] [Sala de TAC 2] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:29.430] [Sala de TAC 2] [PROPOSAL] CFP rejected (Status: Occupied).
+[14:51:29.430] [Dr. Hugo Ribeiro] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:29.430] [Dr. Hugo Ribeiro] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:29.430] [Dr. Andre Lopes] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:29.430] [Dr. Andre Lopes] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:29.430] [supervisor] [DASHBOARD] Consultorio 10 -> LIVRE
+--- SIMULATION PROGRESS: 35/300s ---
+[14:51:30.408] [coord_consultas] Proposta de médico recebida: Dra. Beatriz Santos
+[14:51:30.408] [coord_consultas] [PROPOSTA] Proposta rejeitada: Resource unavailable for requested zone/specialty.
+[14:51:30.408] [coord_consultas] Proposta de sala recebida: Consultorio 1
+[14:51:30.408] [coord_consultas] Proposta de sala recebida: Consultorio 2
+[14:51:30.408] [coord_consultas] Proposta de sala recebida: Consultorio 3
+[14:51:30.408] [coord_consultas] Proposta de sala recebida: Consultorio 4
+[14:51:30.408] [coord_consultas] Proposta de sala recebida: Consultorio 5
+[14:51:30.408] [coord_consultas] Proposta de sala recebida: Consultorio 6
+[14:51:30.408] [coord_consultas] Proposta de sala recebida: Consultorio 7
+[14:51:30.408] [coord_consultas] Proposta de sala recebida: Consultorio 8
+[14:51:30.408] [coord_consultas] Proposta de sala recebida: Consultorio 9
+[14:51:30.408] [coord_consultas] [PROPOSTA] Proposta rejeitada: Room occupied logically.
+[14:51:30.409] [coord_consultas] [ALOCAÇÃO] Consulta de Rotina AGENDADA: Bernardo_177 → Médico=Dra. Beatriz Santos, Sala=Consultorio 9
+[14:51:30.409] [Dra. Beatriz Santos] [ALLOCATION] Allocation ACCEPTED for Bernardo_177. Initiating consultation.
+[14:51:30.409] [Consultorio 9] [ALLOCATION] Allocation ACCEPTED for Bernardo_177
+[14:51:30.410] [supervisor] [SALA-ESPERA] Fila 'routine' atualizada (6 doentes).
+[14:51:30.410] [Dra. Beatriz Santos] [CLÍNICA] A iniciar avaliação clínica a Bernardo_177...
+[14:51:30.410] [supervisor] [DASHBOARD] Dra. Beatriz Santos -> OCUPADO(A) com bernardo_177@127.0.0.1
+[14:51:30.410] [supervisor] [DASHBOARD] Consultorio 9 -> OCUPADO(A) com bernardo_177@127.0.0.1
+[14:51:30.639] [Katia_976] AgenteDoente initialized (type=Normal)
+[14:51:30.639] [Katia_976] [PEDIDO] Consulta de ROTINA para coord_consultas (esp=pediatria)
+[14:51:30.639] [Katia_976] [SUCESSO] Pedido enviado com sucesso.
+[14:51:30.639] [coord_consultas] [PEDIDO] Pedido de consulta de rotina recebido: Katia_976
+[14:51:30.639] [coord_consultas] [FILA] Doente Katia_976 adicionado à fila de rotina (especialidade=pediatria, posição=5).
+[14:51:30.639] [coord_consultas] [FCFS] A tentar alocar cabeça da fila de pediatria: Pedro_287
+[14:51:30.639] [coord_consultas] [CONTRACT-NET] A iniciar negociação para Pedro_287...
+[14:51:30.639] [coord_consultas] [CFP] Call for Proposal enviado ao médico medico1@127.0.0.1
+[14:51:30.639] [coord_consultas] [CFP] Call for Proposal enviado ao médico medico8@127.0.0.1
+[14:51:30.640] [coord_consultas] [CFP] Call for Proposal enviado à sala sala1@127.0.0.1
+[14:51:30.640] [coord_consultas] [CFP] Call for Proposal enviado à sala sala2@127.0.0.1
+[14:51:30.640] [coord_consultas] [CFP] Call for Proposal enviado à sala sala3@127.0.0.1
+[14:51:30.640] [coord_consultas] [CFP] Call for Proposal enviado à sala sala4@127.0.0.1
+[14:51:30.640] [coord_consultas] [CFP] Call for Proposal enviado à sala sala5@127.0.0.1
+[14:51:30.640] [coord_consultas] [CFP] Call for Proposal enviado à sala sala6@127.0.0.1
+[14:51:30.640] [coord_consultas] [CFP] Call for Proposal enviado à sala sala7@127.0.0.1
+[14:51:30.640] [coord_consultas] [CFP] Call for Proposal enviado à sala sala8@127.0.0.1
+[14:51:30.640] [coord_consultas] [CFP] Call for Proposal enviado à sala sala9@127.0.0.1
+[14:51:30.640] [coord_consultas] [CFP] Call for Proposal enviado à sala sala10@127.0.0.1
+[14:51:30.641] [supervisor] [SALA-ESPERA] Fila 'routine' atualizada (7 doentes).
+[14:51:30.642] [Dr. Jose Silva] [CFP] Call for Proposal received for patient Pedro_287
+[14:51:30.642] [Dr. Jose Silva] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:30.642] [Dr. Paulo Rocha] [CFP] Call for Proposal received for patient Pedro_287
+[14:51:30.642] [Dr. Paulo Rocha] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:30.642] [Consultorio 1] [CFP] Call for Proposal received for patient Pedro_287
+[14:51:30.642] [Consultorio 1] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:30.642] [Consultorio 2] [CFP] Call for Proposal received for patient Pedro_287
+[14:51:30.642] [Consultorio 2] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:30.642] [Consultorio 3] [CFP] Call for Proposal received for patient Pedro_287
+[14:51:30.642] [Consultorio 3] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:30.642] [Consultorio 4] [CFP] Call for Proposal received for patient Pedro_287
+[14:51:30.642] [Consultorio 4] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:30.642] [Consultorio 5] [CFP] Call for Proposal received for patient Pedro_287
+[14:51:30.642] [Consultorio 5] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:30.642] [Consultorio 6] [CFP] Call for Proposal received for patient Pedro_287
+[14:51:30.642] [Consultorio 6] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:30.643] [Consultorio 7] [CFP] Call for Proposal received for patient Pedro_287
+[14:51:30.643] [Consultorio 7] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:30.643] [Consultorio 8] [CFP] Call for Proposal received for patient Pedro_287
+[14:51:30.643] [Consultorio 8] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:30.643] [Consultorio 9] [CFP] Call for Proposal received for patient Pedro_287
+[14:51:30.643] [Consultorio 9] [PROPOSAL] CFP rejected (Status: Occupied).
+[14:51:30.643] [Consultorio 10] [CFP] Call for Proposal received for patient Pedro_287
+[14:51:30.643] [Consultorio 10] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:30.963] [Vera_399] AgenteDoente initialized (type=Normal)
+[14:51:30.963] [Vera_399] [PEDIDO] Consulta de ROTINA para coord_consultas (esp=ortopedia)
+[14:51:30.963] [Vera_399] [SUCESSO] Pedido enviado com sucesso.
+[14:51:31.268] [Dr. Andre Lopes] [EXAME] Exame concluido para Pedro_282.
+[14:51:31.268] [supervisor] [DASHBOARD] Dr. Andre Lopes -> LIVRE
+[14:51:31.268] [Sala de TAC 2] [LIBERTAÇÃO] Procedimento concluído com sucesso. Instalação livre (doente anterior: pedro_282@127.0.0.1).
+[14:51:31.269] [supervisor] [DASHBOARD] Sala de TAC 2 -> LIVRE
+[14:51:31.430] [coord_exames] [PROPOSTA] Proposta de equipamento: Sala de TAC 1
+[14:51:31.430] [coord_exames] [PROPOSTA] Proposta rejeitada: Room occupied logically.
+[14:51:31.430] [coord_exames] [PROPOSTA] Proposta de médico: Dr. Hugo Ribeiro
+[14:51:31.430] [coord_exames] [PROPOSTA] Proposta de médico: Dr. Andre Lopes
+[14:51:31.430] [coord_exames] [ALOCAÇÃO] DIAGNÓSTICO AGENDADO: Pedro_282 → Equipamento=Sala de TAC 1, Médico=Dr. Andre Lopes
+[14:51:31.431] [Sala de TAC 1] [ALLOCATION] Allocation ACCEPTED for Pedro_282
+[14:51:31.431] [Dr. Andre Lopes] [ALLOCATION] Exam Allocation ACCEPTED for Pedro_282. Initiating exam.
+[14:51:31.431] [Dra. Rita Goncalves] [SYNC] Confirmation: Equipment sala_tac1@127.0.0.1 locked for exam.
+[14:51:31.431] [supervisor] [DASHBOARD] Sala de TAC 1 -> OCUPADO(A) com pedro_282@127.0.0.1
+[14:51:31.432] [supervisor] [DASHBOARD] Dr. Andre Lopes -> OCUPADO(A) com pedro_282@127.0.0.1
+[14:51:32.640] [coord_consultas] Proposta de médico recebida: Dr. Jose Silva
+[14:51:32.640] [coord_consultas] Proposta de médico recebida: Dr. Paulo Rocha
+[14:51:32.640] [coord_consultas] Proposta de sala recebida: Consultorio 1
+[14:51:32.640] [coord_consultas] Proposta de sala recebida: Consultorio 2
+[14:51:32.640] [coord_consultas] Proposta de sala recebida: Consultorio 3
+[14:51:32.641] [coord_consultas] Proposta de sala recebida: Consultorio 4
+[14:51:32.641] [coord_consultas] Proposta de sala recebida: Consultorio 5
+[14:51:32.641] [coord_consultas] Proposta de sala recebida: Consultorio 6
+[14:51:32.641] [coord_consultas] Proposta de sala recebida: Consultorio 7
+[14:51:32.641] [coord_consultas] Proposta de sala recebida: Consultorio 8
+[14:51:32.641] [coord_consultas] [PROPOSTA] Proposta rejeitada: Room occupied logically.
+[14:51:32.641] [coord_consultas] Proposta de sala recebida: Consultorio 10
+[14:51:32.641] [coord_consultas] [ALOCAÇÃO] Consulta de Rotina AGENDADA: Pedro_287 → Médico=Dr. Paulo Rocha, Sala=Consultorio 10
+[14:51:32.642] [coord_consultas] [PEDIDO] Pedido de consulta de rotina recebido: Vera_399
+[14:51:32.642] [coord_consultas] [FILA] Doente Vera_399 adicionado à fila de rotina (especialidade=ortopedia, posição=1).
+[14:51:32.642] [coord_consultas] [FCFS] A tentar alocar cabeça da fila de pediatria: Walter_324
+[14:51:32.642] [coord_consultas] [CONTRACT-NET] A iniciar negociação para Walter_324...
+[14:51:32.643] [coord_consultas] [CFP] Call for Proposal enviado ao médico medico1@127.0.0.1
+[14:51:32.643] [coord_consultas] [CFP] Call for Proposal enviado ao médico medico8@127.0.0.1
+[14:51:32.643] [coord_consultas] [CFP] Call for Proposal enviado à sala sala1@127.0.0.1
+[14:51:32.643] [coord_consultas] [CFP] Call for Proposal enviado à sala sala2@127.0.0.1
+[14:51:32.643] [coord_consultas] [CFP] Call for Proposal enviado à sala sala3@127.0.0.1
+[14:51:32.643] [coord_consultas] [CFP] Call for Proposal enviado à sala sala4@127.0.0.1
+[14:51:32.643] [coord_consultas] [CFP] Call for Proposal enviado à sala sala5@127.0.0.1
+[14:51:32.644] [coord_consultas] [CFP] Call for Proposal enviado à sala sala6@127.0.0.1
+[14:51:32.644] [coord_consultas] [CFP] Call for Proposal enviado à sala sala7@127.0.0.1
+[14:51:32.644] [coord_consultas] [CFP] Call for Proposal enviado à sala sala8@127.0.0.1
+[14:51:32.644] [coord_consultas] [CFP] Call for Proposal enviado à sala sala9@127.0.0.1
+[14:51:32.644] [coord_consultas] [CFP] Call for Proposal enviado à sala sala10@127.0.0.1
+[14:51:32.645] [Dr. Paulo Rocha] [ALLOCATION] Allocation ACCEPTED for Pedro_287. Initiating consultation.
+[14:51:32.645] [Consultorio 10] [ALLOCATION] Allocation ACCEPTED for Pedro_287
+[14:51:32.646] [supervisor] [SALA-ESPERA] Fila 'routine' atualizada (6 doentes).
+[14:51:32.646] [Dr. Paulo Rocha] [CLÍNICA] A iniciar avaliação clínica a Pedro_287...
+[14:51:32.646] [Dr. Paulo Rocha] [CFP] Call for Proposal received for patient Walter_324
+[14:51:32.646] [Dr. Paulo Rocha] [PROPOSAL] CFP rejected (Status: Occupied).
+[14:51:32.647] [Consultorio 10] [CFP] Call for Proposal received for patient Walter_324
+[14:51:32.647] [Consultorio 10] [PROPOSAL] CFP rejected (Status: Occupied).
+[14:51:32.647] [supervisor] [SALA-ESPERA] Fila 'routine' atualizada (7 doentes).
+[14:51:32.648] [Dr. Jose Silva] [CFP] Call for Proposal received for patient Walter_324
+[14:51:32.648] [Dr. Jose Silva] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:32.648] [Consultorio 1] [CFP] Call for Proposal received for patient Walter_324
+[14:51:32.648] [Consultorio 1] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:32.648] [Consultorio 2] [CFP] Call for Proposal received for patient Walter_324
+[14:51:32.648] [Consultorio 2] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:32.649] [Consultorio 3] [CFP] Call for Proposal received for patient Walter_324
+[14:51:32.649] [Consultorio 3] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:32.649] [Consultorio 4] [CFP] Call for Proposal received for patient Walter_324
+[14:51:32.649] [Consultorio 4] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:32.649] [Consultorio 5] [CFP] Call for Proposal received for patient Walter_324
+[14:51:32.649] [Consultorio 5] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:32.649] [Consultorio 6] [CFP] Call for Proposal received for patient Walter_324
+[14:51:32.649] [Consultorio 6] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:32.650] [Consultorio 7] [CFP] Call for Proposal received for patient Walter_324
+[14:51:32.650] [Consultorio 7] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:32.650] [Consultorio 8] [CFP] Call for Proposal received for patient Walter_324
+[14:51:32.650] [Consultorio 8] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:32.650] [Consultorio 9] [CFP] Call for Proposal received for patient Walter_324
+[14:51:32.650] [Consultorio 9] [PROPOSAL] CFP rejected (Status: Occupied).
+[14:51:32.650] [supervisor] [DASHBOARD] Dr. Paulo Rocha -> OCUPADO(A) com pedro_287@127.0.0.1
+[14:51:32.651] [supervisor] [DASHBOARD] Consultorio 10 -> OCUPADO(A) com pedro_287@127.0.0.1
+[14:51:33.039] [Quitéria_465] AgenteDoente initialized (type=Normal)
+[14:51:33.039] [Quitéria_465] [PEDIDO] Consulta de ROTINA para coord_consultas (esp=pediatria)
+[14:51:33.040] [Quitéria_465] [SUCESSO] Pedido enviado com sucesso.
+[14:51:34.645] [coord_consultas] [PROPOSTA] Proposta rejeitada: Resource unavailable for requested zone/specialty.
+[14:51:34.645] [coord_consultas] [PROPOSTA] Proposta rejeitada: Room occupied logically.
+[14:51:34.645] [coord_consultas] Proposta de médico recebida: Dr. Jose Silva
+[14:51:34.645] [coord_consultas] Proposta de sala recebida: Consultorio 1
+[14:51:34.645] [coord_consultas] Proposta de sala recebida: Consultorio 2
+[14:51:34.645] [coord_consultas] Proposta de sala recebida: Consultorio 3
+[14:51:34.645] [coord_consultas] Proposta de sala recebida: Consultorio 4
+[14:51:34.645] [coord_consultas] Proposta de sala recebida: Consultorio 5
+[14:51:34.645] [coord_consultas] Proposta de sala recebida: Consultorio 6
+[14:51:34.645] [coord_consultas] Proposta de sala recebida: Consultorio 7
+[14:51:34.646] [coord_consultas] Proposta de sala recebida: Consultorio 8
+[14:51:34.646] [coord_consultas] [PROPOSTA] Proposta rejeitada: Room occupied logically.
+[14:51:34.646] [coord_consultas] [ALOCAÇÃO] Consulta de Rotina AGENDADA: Walter_324 → Médico=Dr. Jose Silva, Sala=Consultorio 8
+[14:51:34.646] [coord_consultas] [PEDIDO] Pedido de consulta de rotina recebido: Quitéria_465
+[14:51:34.647] [coord_consultas] [FILA] Doente Quitéria_465 adicionado à fila de rotina (especialidade=pediatria, posição=4).
+[14:51:34.647] [coord_consultas] [FCFS] A tentar alocar cabeça da fila de pediatria: Carla_900
+[14:51:34.647] [coord_consultas] [CONTRACT-NET] A iniciar negociação para Carla_900...
+[14:51:34.647] [coord_consultas] [CFP] Call for Proposal enviado ao médico medico1@127.0.0.1
+[14:51:34.647] [coord_consultas] [CFP] Call for Proposal enviado ao médico medico8@127.0.0.1
+[14:51:34.647] [coord_consultas] [CFP] Call for Proposal enviado à sala sala1@127.0.0.1
+[14:51:34.647] [coord_consultas] [CFP] Call for Proposal enviado à sala sala2@127.0.0.1
+[14:51:34.648] [coord_consultas] [CFP] Call for Proposal enviado à sala sala3@127.0.0.1
+[14:51:34.648] [coord_consultas] [CFP] Call for Proposal enviado à sala sala4@127.0.0.1
+[14:51:34.648] [coord_consultas] [CFP] Call for Proposal enviado à sala sala5@127.0.0.1
+[14:51:34.648] [coord_consultas] [CFP] Call for Proposal enviado à sala sala6@127.0.0.1
+[14:51:34.648] [coord_consultas] [CFP] Call for Proposal enviado à sala sala7@127.0.0.1
+[14:51:34.648] [coord_consultas] [CFP] Call for Proposal enviado à sala sala8@127.0.0.1
+[14:51:34.648] [coord_consultas] [CFP] Call for Proposal enviado à sala sala9@127.0.0.1
+[14:51:34.648] [coord_consultas] [CFP] Call for Proposal enviado à sala sala10@127.0.0.1
+[14:51:34.649] [Dr. Jose Silva] [ALLOCATION] Allocation ACCEPTED for Walter_324. Initiating consultation.
+[14:51:34.649] [Consultorio 8] [ALLOCATION] Allocation ACCEPTED for Walter_324
+[14:51:34.649] [supervisor] [SALA-ESPERA] Fila 'routine' atualizada (6 doentes).
+[14:51:34.650] [Dr. Jose Silva] [CLÍNICA] A iniciar avaliação clínica a Walter_324...
+[14:51:34.650] [Dr. Jose Silva] [CFP] Call for Proposal received for patient Carla_900
+[14:51:34.650] [Dr. Jose Silva] [PROPOSAL] CFP rejected (Status: Occupied).
+[14:51:34.650] [Consultorio 8] [CFP] Call for Proposal received for patient Carla_900
+[14:51:34.650] [Consultorio 8] [PROPOSAL] CFP rejected (Status: Occupied).
+[14:51:34.650] [supervisor] [SALA-ESPERA] Fila 'routine' atualizada (7 doentes).
+[14:51:34.651] [Dr. Paulo Rocha] [CFP] Call for Proposal received for patient Carla_900
+[14:51:34.651] [Dr. Paulo Rocha] [PROPOSAL] CFP rejected (Status: Occupied).
+[14:51:34.651] [Consultorio 1] [CFP] Call for Proposal received for patient Carla_900
+[14:51:34.651] [Consultorio 1] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:34.651] [Consultorio 2] [CFP] Call for Proposal received for patient Carla_900
+[14:51:34.651] [Consultorio 2] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:34.651] [Consultorio 3] [CFP] Call for Proposal received for patient Carla_900
+[14:51:34.651] [Consultorio 3] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:34.652] [Consultorio 4] [CFP] Call for Proposal received for patient Carla_900
+[14:51:34.652] [Consultorio 4] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:34.652] [Consultorio 5] [CFP] Call for Proposal received for patient Carla_900
+[14:51:34.652] [Consultorio 5] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:34.652] [Consultorio 6] [CFP] Call for Proposal received for patient Carla_900
+[14:51:34.652] [Consultorio 6] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:34.652] [Consultorio 7] [CFP] Call for Proposal received for patient Carla_900
+[14:51:34.652] [Consultorio 7] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:34.653] [Consultorio 9] [CFP] Call for Proposal received for patient Carla_900
+[14:51:34.653] [Consultorio 9] [PROPOSAL] CFP rejected (Status: Occupied).
+[14:51:34.653] [Consultorio 10] [CFP] Call for Proposal received for patient Carla_900
+[14:51:34.653] [Consultorio 10] [PROPOSAL] CFP rejected (Status: Occupied).
+[14:51:34.653] [supervisor] [DASHBOARD] Dr. Jose Silva -> OCUPADO(A) com walter_324@127.0.0.1
+[14:51:34.654] [supervisor] [DASHBOARD] Consultorio 8 -> OCUPADO(A) com walter_324@127.0.0.1
+--- SIMULATION PROGRESS: 40/300s ---
+[14:51:35.428] [Dra. Rita Goncalves] [CLÍNICA] Resultados de diagnóstico recebidos para Pedro_708. A solicitar intervenção cirúrgica urgente.
+[14:51:35.428] [Dra. Rita Goncalves] [SYNC] Equipamento sala_tac1@127.0.0.1 libertado.
+[14:51:35.429] [Sala de TAC 1] [LIBERTAÇÃO] Procedimento concluído com sucesso. Instalação livre (doente anterior: pedro_282@127.0.0.1).
+[14:51:35.429] [coord_cirurgias] [PEDIDO] Pedido de cirurgia recebido para: Pedro_708
+[14:51:35.429] [coord_cirurgias] [CONTRACT-NET] A iniciar negociação CIRÚRGICA para Pedro_708...
+[14:51:35.429] [coord_cirurgias] [CFP] CFP enviado para bloco operatório bloco_operatorio1@127.0.0.1
+[14:51:35.429] [coord_cirurgias] [CFP] CFP enviado para bloco operatório bloco_operatorio2@127.0.0.1
+[14:51:35.429] [coord_cirurgias] [CFP] CFP enviado para bloco operatório bloco_operatorio3@127.0.0.1
+[14:51:35.429] [coord_cirurgias] [CFP] Call for Proposal enviado ao médico/cirurgião medico4@127.0.0.1
+[14:51:35.429] [supervisor] [DASHBOARD] Dra. Rita Goncalves -> LIVRE
+[14:51:35.430] [supervisor] [DASHBOARD] Sala de TAC 1 -> LIVRE
+[14:51:35.430] [Bloco Operatório A] [CFP] Call for Proposal received for patient Pedro_708
+[14:51:35.430] [Bloco Operatório A] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:35.430] [Bloco Operatório B] [CFP] Call for Proposal received for patient Pedro_708
+[14:51:35.430] [Bloco Operatório B] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:35.430] [Bloco Operatório C] [CFP] Call for Proposal received for patient Pedro_708
+[14:51:35.430] [Bloco Operatório C] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:35.431] [Dr. Ricardo Lima] [CFP] Call for Proposal received for patient Pedro_708
+[14:51:35.431] [Dr. Ricardo Lima] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:36.431] [coord_exames] [CONTRACT-NET] A iniciar negociação de DIAGNÓSTICO para Pedro_282 (esp=tac)...
+[14:51:36.431] [coord_exames] [CFP] CFP enviado para equipamento sala_tac1@127.0.0.1
+[14:51:36.431] [coord_exames] [CFP] CFP enviado para equipamento sala_tac2@127.0.0.1
+[14:51:36.431] [coord_exames] [CFP] CFP enviado para médico de exame medico6@127.0.0.1
+[14:51:36.431] [coord_exames] [CFP] CFP enviado para médico de exame medico12@127.0.0.1
+[14:51:36.431] [Dr. Andre Lopes] [EXAME] Exame concluido para Pedro_282.
+[14:51:36.432] [Sala de TAC 1] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:36.432] [Sala de TAC 1] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:36.432] [Sala de TAC 2] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:36.432] [Sala de TAC 2] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:36.432] [Dr. Hugo Ribeiro] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:36.432] [Dr. Hugo Ribeiro] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:36.432] [Dr. Andre Lopes] [CFP] Call for Proposal received for patient Pedro_282
+[14:51:36.432] [Dr. Andre Lopes] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:36.432] [Sala de TAC 1] [LIBERTAÇÃO] Procedimento concluído com sucesso. Instalação livre (doente anterior: None).
+[14:51:36.433] [supervisor] [DASHBOARD] Dr. Andre Lopes -> LIVRE
+[14:51:36.433] [supervisor] [DASHBOARD] Sala de TAC 1 -> LIVRE
+[14:51:36.649] [coord_consultas] [PROPOSTA] Proposta rejeitada: Resource unavailable for requested zone/specialty.
+[14:51:36.649] [coord_consultas] [PROPOSTA] Proposta rejeitada: Room occupied logically.
+[14:51:36.649] [coord_consultas] [PROPOSTA] Proposta rejeitada: Resource unavailable for requested zone/specialty.
+[14:51:36.649] [coord_consultas] Proposta de sala recebida: Consultorio 1
+[14:51:36.649] [coord_consultas] Proposta de sala recebida: Consultorio 2
+[14:51:36.649] [coord_consultas] Proposta de sala recebida: Consultorio 3
+[14:51:36.649] [coord_consultas] Proposta de sala recebida: Consultorio 4
+[14:51:36.649] [coord_consultas] Proposta de sala recebida: Consultorio 5
+[14:51:36.649] [coord_consultas] Proposta de sala recebida: Consultorio 6
+[14:51:36.649] [coord_consultas] Proposta de sala recebida: Consultorio 7
+[14:51:36.649] [coord_consultas] [PROPOSTA] Proposta rejeitada: Room occupied logically.
+[14:51:36.649] [coord_consultas] [PROPOSTA] Proposta rejeitada: Room occupied logically.
+[14:51:36.650] [coord_consultas] [ALOCAÇÃO-FALHOU] Impossível agendar consulta de rotina a Carla_900 (recursos indisponíveis). Pedido pendente.
+[14:51:36.650] [coord_consultas] [FCFS] Doente mantém-se em espera (pediatria): Carla_900
+[14:51:36.650] [coord_consultas] [FCFS] A tentar alocar cabeça da fila de ortopedia: Vera_399
+[14:51:36.650] [coord_consultas] [CONTRACT-NET] A iniciar negociação para Vera_399...
+[14:51:36.650] [coord_consultas] [CFP] Call for Proposal enviado ao médico medico2@127.0.0.1
+[14:51:36.650] [coord_consultas] [CFP] Call for Proposal enviado ao médico medico9@127.0.0.1
+[14:51:36.650] [coord_consultas] [CFP] Call for Proposal enviado à sala sala1@127.0.0.1
+[14:51:36.650] [coord_consultas] [CFP] Call for Proposal enviado à sala sala2@127.0.0.1
+[14:51:36.650] [coord_consultas] [CFP] Call for Proposal enviado à sala sala3@127.0.0.1
+[14:51:36.650] [coord_consultas] [CFP] Call for Proposal enviado à sala sala4@127.0.0.1
+[14:51:36.650] [coord_consultas] [CFP] Call for Proposal enviado à sala sala5@127.0.0.1
+[14:51:36.651] [coord_consultas] [CFP] Call for Proposal enviado à sala sala6@127.0.0.1
+[14:51:36.651] [coord_consultas] [CFP] Call for Proposal enviado à sala sala7@127.0.0.1
+[14:51:36.651] [coord_consultas] [CFP] Call for Proposal enviado à sala sala8@127.0.0.1
+[14:51:36.651] [coord_consultas] [CFP] Call for Proposal enviado à sala sala9@127.0.0.1
+[14:51:36.651] [coord_consultas] [CFP] Call for Proposal enviado à sala sala10@127.0.0.1
+[14:51:36.651] [Dra. Beatriz Santos] [CFP] Call for Proposal received for patient Vera_399
+[14:51:36.651] [Dra. Beatriz Santos] [PROPOSAL] CFP rejected (Status: Occupied).
+[14:51:36.651] [Dra. Rita Goncalves] [CFP] Call for Proposal received for patient Vera_399
+[14:51:36.651] [Dra. Rita Goncalves] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:36.652] [Consultorio 1] [CFP] Call for Proposal received for patient Vera_399
+[14:51:36.652] [Consultorio 1] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:36.652] [Consultorio 2] [CFP] Call for Proposal received for patient Vera_399
+[14:51:36.652] [Consultorio 2] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:36.652] [Consultorio 3] [CFP] Call for Proposal received for patient Vera_399
+[14:51:36.652] [Consultorio 3] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:36.652] [Consultorio 4] [CFP] Call for Proposal received for patient Vera_399
+[14:51:36.652] [Consultorio 4] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:36.652] [Consultorio 5] [CFP] Call for Proposal received for patient Vera_399
+[14:51:36.652] [Consultorio 5] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:36.652] [Consultorio 6] [CFP] Call for Proposal received for patient Vera_399
+[14:51:36.652] [Consultorio 6] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:36.653] [Consultorio 7] [CFP] Call for Proposal received for patient Vera_399
+[14:51:36.653] [Consultorio 7] [PROPOSAL] Proposal emitted (Status: Available).
+[14:51:36.653] [Consultorio 8] [CFP] Call for Proposal received for patient Vera_399
+[14:51:36.653] [Consultorio 8] [PROPOSAL] CFP rejected (Status: Occupied).
+[14:51:36.653] [Consultorio 9] [CFP] Call for Proposal received for patient Vera_399
+[14:51:36.653] [Consultorio 9] [PROPOSAL] CFP rejected (Status: Occupied).
+[14:51:36.653] [Consultorio 10] [CFP] Call for Proposal received for patient Vera_399
+[14:51:36.653] [Consultorio 10] [PROPOSAL] CFP rejected (Status: Occupied).

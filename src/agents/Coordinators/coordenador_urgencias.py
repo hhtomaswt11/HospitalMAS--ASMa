@@ -41,6 +41,21 @@ class CoordenadorUrgencias(Agent):
 
     class EmergencyCoordinatorBehaviour(CyclicBehaviour):
 
+        async def handle_out_of_band_message(self, msg):
+            performative = msg.get_metadata("performative")
+            msg_type = msg.get_metadata("type")
+
+            if performative == "request" and msg_type == "triaged_patient":
+                data = json.loads(msg.body)
+                self.agent.pending_urgencies.append(data)
+                self.agent.pending_urgencies.sort(key=lambda p: p.get("prioridade", URGENT_PRIORITY_MAX))
+                await self.publish_waitlist()
+                log(COORD_URG,
+                    f"[FILA-URG] Pedido triado enfileirado fora de banda: {data.get('nome', '?')} "
+                    f"(prioridade={data.get('prioridade', '?')})",
+                    "YELLOW")
+                return
+
         async def publish_waitlist(self):
             msg = Message(to=jid(SUPERVISOR))
             msg.set_metadata("performative", "inform")
@@ -74,6 +89,13 @@ class CoordenadorUrgencias(Agent):
         async def run(self):
             msg = await self.receive(timeout=COORDINATOR_RECEIVE_TIMEOUT_SECONDS)
             if msg is None:
+                if self.agent.pending_urgencies:
+                    log(
+                        COORD_URG,
+                        "[RETRY] Sem eventos novos; a re-tentar despacho da urgência pendente.",
+                        "YELLOW",
+                    )
+                    await self.dispatch_next_emergency()
                 return
 
             performative = msg.get_metadata("performative")
@@ -160,6 +182,10 @@ class CoordenadorUrgencias(Agent):
             for _ in range(expected_replies):
                 reply = await self.receive(timeout=COORDINATOR_PROPOSAL_TIMEOUT_SECONDS)
                 if reply is None:
+                    continue
+
+                if reply.thread != doente_jid:
+                    await self.handle_out_of_band_message(reply)
                     continue
 
                 perf = reply.get_metadata("performative")

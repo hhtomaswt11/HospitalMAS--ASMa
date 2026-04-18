@@ -339,6 +339,48 @@ class CoordenadorConsultas(Agent):
         # -----------------------------------------------------------------
         # PREEMPTION: Cancelar alocação normal para libertar recursos
         # -----------------------------------------------------------------
+        async def await_preemption_confirmations(self, doente_jid, medico_jid, sala_jid):
+            """Aguarda ACKs de cancelamento de médico e sala para uma preempção."""
+            confirmed_medico = False
+            confirmed_sala = False
+
+            deadline = asyncio.get_running_loop().time() + PREEMPTION_CONFIRM_WAIT_SECONDS
+
+            while not (confirmed_medico and confirmed_sala):
+                remaining = deadline - asyncio.get_running_loop().time()
+                if remaining <= 0:
+                    break
+
+                reply = await self.receive(timeout=remaining)
+                if reply is None:
+                    break
+
+                if reply.thread != doente_jid:
+                    await self.handle_out_of_band_message(reply)
+                    continue
+
+                if (
+                    reply.get_metadata("performative") != "inform"
+                    or reply.get_metadata("type") != "cancel_confirmed"
+                ):
+                    continue
+
+                try:
+                    body = json.loads(reply.body)
+                except Exception:
+                    continue
+
+                sender_bare = str(reply.sender).split("/")[0]
+                medico_bare = str(medico_jid).split("/")[0]
+                sala_bare = str(sala_jid).split("/")[0]
+
+                if sender_bare == medico_bare and body.get("status") == "freed":
+                    confirmed_medico = True
+                elif sender_bare == sala_bare and body.get("status") == "freed":
+                    confirmed_sala = True
+
+            return confirmed_medico, confirmed_sala
+
         async def handle_preemption(self, data):
             """Processa ordem de preemption do Supervisor."""
             log(COORD_CONS,
@@ -393,21 +435,34 @@ class CoordenadorConsultas(Agent):
                 }, prepend=True)
                 await self.publish_waitlist()
 
-                # Aguardar confirmações de cancelamento
-                await asyncio.sleep(PREEMPTION_CONFIRM_WAIT_SECONDS)
+                # Aguardar confirmações explícitas de cancelamento
+                confirmed_medico, confirmed_sala = await self.await_preemption_confirmations(
+                    doente_cancelar,
+                    aloc["medico_jid"],
+                    aloc["sala_jid"],
+                )
 
-                # Informar o Supervisor que os recursos foram libertados
+                status = "resources_freed" if (confirmed_medico and confirmed_sala) else "cancel_timeout"
+
+                # Informar o Supervisor do resultado real da preempção
                 confirm = Message(to=jid(SUPERVISOR))
                 confirm.set_metadata("performative", "inform")
                 confirm.set_metadata("type", "preemption_done")
                 confirm.body = json.dumps({
-                    "status": "resources_freed",
+                    "status": status,
                     "medico_jid": aloc["medico_jid"],
                     "sala_jid": aloc["sala_jid"],
+                    "confirmed_medico": confirmed_medico,
+                    "confirmed_sala": confirmed_sala,
                 })
                 await self.send(confirm)
-                log(COORD_CONS,
-                    "[PREEMPÇÃO] Recursos libertados com sucesso e supervisor notificado.", "YELLOW")
+                if status == "resources_freed":
+                    log(COORD_CONS,
+                        "[PREEMPÇÃO] Recursos libertados com sucesso e supervisor notificado.", "YELLOW")
+                else:
+                    log(COORD_CONS,
+                        "[PREEMPÇÃO-AVISO] Timeout na confirmação de cancelamento; supervisor notificado com estado parcial.",
+                        "RED")
             else:
                 log(COORD_CONS,
                     "[PREEMPÇÃO-FALHOU] Não existem alocações de rotina ativas para libertar.", "RED")

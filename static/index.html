@@ -724,11 +724,28 @@
             loungePatients.innerHTML = loungeHtml;
 
             // 3. Render Staff On-Call (Medics NOT in rooms)
-            let staffHtml = '';
+            const medicsBySpecialty = {};
             Object.keys(ENTITIES.medics).forEach(mJid => {
-                if (!inRoomMedics.has(mJid)) {
-                    staffHtml += createEntityEntry(mJid, ENTITIES.medics[mJid], 'medic');
+                if (inRoomMedics.has(mJid)) {
+                    return;
                 }
+
+                const mInfo = ENTITIES.medics[mJid] || {};
+                const specialtyKey = mInfo.specialty || 'sem_especialidade';
+                if (!medicsBySpecialty[specialtyKey]) {
+                    medicsBySpecialty[specialtyKey] = [];
+                }
+                medicsBySpecialty[specialtyKey].push({ jid: mJid, info: mInfo });
+            });
+
+            let staffHtml = '';
+            const medicSpecialties = Object.keys(medicsBySpecialty);
+            medicSpecialties.forEach((specialty) => {
+                staffHtml += `<div class="queue-group"><div class="queue-group-title">${formatSpecialty(specialty)}</div>`;
+                medicsBySpecialty[specialty].forEach((medic) => {
+                    staffHtml += createEntityEntry(medic.jid, medic.info, 'medic');
+                });
+                staffHtml += '</div>';
             });
             staffMedics.innerHTML = staffHtml;
 

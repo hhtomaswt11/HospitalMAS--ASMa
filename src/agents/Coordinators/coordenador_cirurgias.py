@@ -9,12 +9,38 @@ from src.config import *
 
 class CoordenadorCirurgias(Agent):
 
+    def __init__(self, agent_jid, password, **kwargs):
+        super().__init__(agent_jid, password, **kwargs)
+        self.pending_surgery_requests = []
+
 
     class SurgeryCoordinatorBehaviour(CyclicBehaviour):
+
+        async def handle_out_of_band_message(self, msg):
+            performative = msg.get_metadata("performative")
+            msg_type = msg.get_metadata("type")
+
+            if performative == "request" and msg_type == "surgery_request":
+                data = json.loads(msg.body)
+                self.agent.pending_surgery_requests.append(data)
+                log(COORD_CIR,
+                    f"[FILA-CIR] Pedido enfileirado fora de banda: {data.get('nome', '?')}",
+                    "YELLOW")
+
+        async def dispatch_next_surgery(self):
+            if not self.agent.pending_surgery_requests:
+                return
+
+            patient = self.agent.pending_surgery_requests[0]
+            allocated = await self.run_surgery_contract_net(patient)
+            if allocated:
+                self.agent.pending_surgery_requests.pop(0)
 
         async def run(self):
             msg = await self.receive(timeout=COORDINATOR_RECEIVE_TIMEOUT_SECONDS)
             if msg is None:
+                if self.agent.pending_surgery_requests:
+                    await self.dispatch_next_surgery()
                 return
 
             performative = msg.get_metadata("performative")
@@ -26,7 +52,8 @@ class CoordenadorCirurgias(Agent):
                 log(COORD_CIR,
                     f"[PEDIDO] Pedido de cirurgia recebido para: {data.get('nome', '?')}",
                     "MAGENTA")
-                await self.run_surgery_contract_net(data)
+                self.agent.pending_surgery_requests.append(data)
+                await self.dispatch_next_surgery()
 
         async def run_surgery_contract_net(self, patient_data):
             """Contract-Net com blocos operatórios e médicos."""
@@ -76,6 +103,7 @@ class CoordenadorCirurgias(Agent):
                     continue
 
                 if reply.thread != doente_jid:
+                    await self.handle_out_of_band_message(reply)
                     continue
 
                 perf = reply.get_metadata("performative")
