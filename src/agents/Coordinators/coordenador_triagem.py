@@ -13,6 +13,17 @@ class CoordenadorTriagem(Agent):
     def __init__(self, agent_jid, password, **kwargs):
         super().__init__(agent_jid, password, **kwargs)
         self.pending_triage = []
+        self.pending_triage_patient_ids = set()
+
+    def enqueue_triage_request(self, data):
+        doente_jid = data.get("doente_jid")
+        if not doente_jid:
+            return False
+        if doente_jid in self.pending_triage_patient_ids:
+            return False
+        self.pending_triage.append(data)
+        self.pending_triage_patient_ids.add(doente_jid)
+        return True
 
     class TriageCoordinatorBehaviour(CyclicBehaviour):
         async def run(self):
@@ -28,9 +39,11 @@ class CoordenadorTriagem(Agent):
             if performative == "request" and msg_type == "patient_request":
                 data = json.loads(msg.body)
                 log(COORD_TRI, f"[TRIAGEM] Pedido de urgencia recebido: {data.get('nome', '?')}", "YELLOW")
-                self.agent.pending_triage.append(data)
-                await self.publish_waitlist()
-                await self.dispatch_next_triage()
+                if self.agent.enqueue_triage_request(data):
+                    await self.publish_waitlist()
+                    await self.dispatch_next_triage()
+                else:
+                    log(COORD_TRI, f"[TRIAGEM] Pedido duplicado ignorado: {data.get('nome', '?')}", "YELLOW")
 
         async def publish_waitlist(self):
             msg = Message(to=jid(SUPERVISOR))
@@ -57,7 +70,8 @@ class CoordenadorTriagem(Agent):
             patient = self.agent.pending_triage[0]
             allocated = await self.run_triage_contract_net(patient)
             if allocated:
-                self.agent.pending_triage.pop(0)
+                removed = self.agent.pending_triage.pop(0)
+                self.agent.pending_triage_patient_ids.discard(removed.get("doente_jid"))
                 await self.publish_waitlist()
 
         async def run_triage_contract_net(self, patient_data):
@@ -96,8 +110,8 @@ class CoordenadorTriagem(Agent):
                         and reply.get_metadata("type") == "patient_request"
                     ):
                         extra = json.loads(reply.body)
-                        self.agent.pending_triage.append(extra)
-                        await self.publish_waitlist()
+                        if self.agent.enqueue_triage_request(extra):
+                            await self.publish_waitlist()
                     continue
 
                 perf = reply.get_metadata("performative")

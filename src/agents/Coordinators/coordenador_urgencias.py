@@ -13,6 +13,19 @@ class CoordenadorUrgencias(Agent):
     def __init__(self, agent_jid, password, **kwargs):
         super().__init__(agent_jid, password, **kwargs)
         self.pending_urgencies = []
+        self.pending_urgency_patient_ids = set()
+        self.preemption_requested_patient_ids = set()
+
+    def enqueue_urgency(self, data):
+        doente_jid = data.get("doente_jid")
+        if not doente_jid:
+            return False
+        if doente_jid in self.pending_urgency_patient_ids:
+            return False
+        self.pending_urgencies.append(data)
+        self.pending_urgency_patient_ids.add(doente_jid)
+        self.pending_urgencies.sort(key=lambda p: p.get("prioridade", URGENT_PRIORITY_MAX))
+        return True
 
     def get_emergency_waitlist(self):
         return [
@@ -47,13 +60,16 @@ class CoordenadorUrgencias(Agent):
 
             if performative == "request" and msg_type == "triaged_patient":
                 data = json.loads(msg.body)
-                self.agent.pending_urgencies.append(data)
-                self.agent.pending_urgencies.sort(key=lambda p: p.get("prioridade", URGENT_PRIORITY_MAX))
-                await self.publish_waitlist()
-                log(COORD_URG,
-                    f"[FILA-URG] Pedido triado enfileirado fora de banda: {data.get('nome', '?')} "
-                    f"(prioridade={data.get('prioridade', '?')})",
-                    "YELLOW")
+                if self.agent.enqueue_urgency(data):
+                    await self.publish_waitlist()
+                    log(COORD_URG,
+                        f"[FILA-URG] Pedido triado enfileirado fora de banda: {data.get('nome', '?')} "
+                        f"(prioridade={data.get('prioridade', '?')})",
+                        "YELLOW")
+                else:
+                    log(COORD_URG,
+                        f"[FILA-URG] Pedido duplicado ignorado: {data.get('nome', '?')}",
+                        "YELLOW")
                 return
 
         async def publish_waitlist(self):
@@ -67,11 +83,18 @@ class CoordenadorUrgencias(Agent):
             })
             await self.send(msg)
 
+            blocked_specialties = sorted({
+                p.get("especialidade")
+                for p in self.agent.pending_urgencies
+                if p.get("especialidade")
+            })
+
             gate = Message(to=jid(COORD_CONS))
             gate.set_metadata("performative", "inform")
             gate.set_metadata("type", "routine_gate")
             gate.body = json.dumps({
-                "hold": len(self.agent.pending_urgencies) > 0
+                "blocked_specialties": blocked_specialties,
+                "hold": len(blocked_specialties) > 0,
             })
             await self.send(gate)
 
@@ -82,8 +105,30 @@ class CoordenadorUrgencias(Agent):
             patient = self.agent.pending_urgencies[0]
             allocated = await self.run_emergency_contract_net(patient)
             if allocated:
-                self.agent.pending_urgencies.pop(0)
+                removed = self.agent.pending_urgencies.pop(0)
+                self.agent.pending_urgency_patient_ids.discard(removed.get("doente_jid"))
+                self.agent.preemption_requested_patient_ids.discard(removed.get("doente_jid"))
                 await self.publish_waitlist()
+            else:
+                doente_jid = patient.get("doente_jid")
+                if doente_jid and doente_jid not in self.agent.preemption_requested_patient_ids:
+                    preempt = Message(to=jid(SUPERVISOR))
+                    preempt.set_metadata("performative", "request")
+                    preempt.set_metadata("type", "preemption_request")
+                    preempt.body = json.dumps({
+                        "urgente_jid": doente_jid,
+                        "urgente_nome": patient.get("nome", "?"),
+                        "prioridade": patient.get("prioridade"),
+                        "especialidade": patient.get("especialidade"),
+                    })
+                    preempt.thread = doente_jid
+                    await self.send(preempt)
+                    self.agent.preemption_requested_patient_ids.add(doente_jid)
+                    log(
+                        COORD_URG,
+                        f"[PREEMPÇÃO] Pedido de preempção enviado ao Supervisor para {patient.get('nome', '?')}.",
+                        "RED",
+                    )
 
 
         async def run(self):
@@ -107,12 +152,13 @@ class CoordenadorUrgencias(Agent):
                 log(COORD_URG,
                     f"[PEDIDO] Pedido triado de emergência recebido: {data['nome']} "
                     f"(prioridade={data['prioridade']})", "RED")
-                self.agent.pending_urgencies.append(data)
-                self.agent.pending_urgencies.sort(key=lambda p: p.get("prioridade", URGENT_PRIORITY_MAX))
-                await self.publish_waitlist()
-                log(COORD_URG,
-                    "[A AGUARDAR] A aguardar confirmação de libertação de recursos do Supervisor...",
-                    "YELLOW")
+                if self.agent.enqueue_urgency(data):
+                    await self.publish_waitlist()
+                    await self.dispatch_next_emergency()
+                else:
+                    log(COORD_URG,
+                        f"[FILA-URG] Pedido duplicado ignorado: {data.get('nome', '?')}",
+                        "YELLOW")
 
             # ---- Recursos libertados (do Supervisor) ----
             elif performative == "inform" and msg_type == "resources_freed":
@@ -120,6 +166,9 @@ class CoordenadorUrgencias(Agent):
                     "[NOTIFICAÇÃO] Confirmação de preempção recebida do Supervisor.",
                     "GREEN")
                 if self.agent.pending_urgencies:
+                    head_doente_jid = self.agent.pending_urgencies[0].get("doente_jid")
+                    if head_doente_jid:
+                        self.agent.preemption_requested_patient_ids.discard(head_doente_jid)
                     await self.dispatch_next_emergency()
 
         # -----------------------------------------------------------------

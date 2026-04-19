@@ -132,17 +132,33 @@ class Supervisor(Agent):
                     }
 
                 log(SUPERVISOR, f"[ALERTA-EMERGÊNCIA] Recebido alerta prioritário! Doente: {data['nome']} | Prioridade: {data['prioridade']}", "RED")
+
+            elif performative == "request" and msg_type == "preemption_request":
+                data = json.loads(msg.body)
+                urgente_jid = data.get("urgente_jid") or data.get("doente_jid")
+                urgente_nome = data.get("urgente_nome") or data.get("nome", "?")
+                prioridade = data.get("prioridade")
+
+                if not urgente_jid:
+                    log(
+                        SUPERVISOR,
+                        "[PREEMPÇÃO-ERRO] Pedido de preempção inválido: urgente_jid em falta.",
+                        "RED",
+                    )
+                    return
+
+                log(SUPERVISOR, f"[PREEMPÇÃO] Pedido recebido de urgências para {urgente_nome}.", "RED")
                 log(SUPERVISOR, "[PREEMPÇÃO] A despoletar protocolo dinâmico de preempção...", "RED")
 
                 preempt = Message(to=jid(COORD_CONS))
                 preempt.set_metadata("performative", "request")
                 preempt.set_metadata("type", "preemption_order")
                 preempt.body = json.dumps({
-                    "urgente_jid": data["doente_jid"],
-                    "urgente_nome": data["nome"],
-                    "prioridade": data["prioridade"],
+                    "urgente_jid": urgente_jid,
+                    "urgente_nome": urgente_nome,
+                    "prioridade": prioridade,
                 })
-                preempt.thread = data["doente_jid"]
+                preempt.thread = urgente_jid
                 await self.send(preempt)
                 log(SUPERVISOR, f"[PREEMPÇÃO] Diretiva de preempção enviada para {COORD_CONS}.", "YELLOW")
 

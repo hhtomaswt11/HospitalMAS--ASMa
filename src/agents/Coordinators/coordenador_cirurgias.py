@@ -12,6 +12,17 @@ class CoordenadorCirurgias(Agent):
     def __init__(self, agent_jid, password, **kwargs):
         super().__init__(agent_jid, password, **kwargs)
         self.pending_surgery_requests = []
+        self.pending_surgery_patient_ids = set()
+
+    def enqueue_surgery_request(self, data):
+        doente_jid = data.get("doente_jid")
+        if not doente_jid:
+            return False
+        if doente_jid in self.pending_surgery_patient_ids:
+            return False
+        self.pending_surgery_requests.append(data)
+        self.pending_surgery_patient_ids.add(doente_jid)
+        return True
 
 
     class SurgeryCoordinatorBehaviour(CyclicBehaviour):
@@ -22,10 +33,14 @@ class CoordenadorCirurgias(Agent):
 
             if performative == "request" and msg_type == "surgery_request":
                 data = json.loads(msg.body)
-                self.agent.pending_surgery_requests.append(data)
-                log(COORD_CIR,
-                    f"[FILA-CIR] Pedido enfileirado fora de banda: {data.get('nome', '?')}",
-                    "YELLOW")
+                if self.agent.enqueue_surgery_request(data):
+                    log(COORD_CIR,
+                        f"[FILA-CIR] Pedido enfileirado fora de banda: {data.get('nome', '?')}",
+                        "YELLOW")
+                else:
+                    log(COORD_CIR,
+                        f"[FILA-CIR] Pedido duplicado ignorado: {data.get('nome', '?')}",
+                        "YELLOW")
 
         async def dispatch_next_surgery(self):
             if not self.agent.pending_surgery_requests:
@@ -34,7 +49,8 @@ class CoordenadorCirurgias(Agent):
             patient = self.agent.pending_surgery_requests[0]
             allocated = await self.run_surgery_contract_net(patient)
             if allocated:
-                self.agent.pending_surgery_requests.pop(0)
+                removed = self.agent.pending_surgery_requests.pop(0)
+                self.agent.pending_surgery_patient_ids.discard(removed.get("doente_jid"))
 
         async def run(self):
             msg = await self.receive(timeout=COORDINATOR_RECEIVE_TIMEOUT_SECONDS)
@@ -52,8 +68,12 @@ class CoordenadorCirurgias(Agent):
                 log(COORD_CIR,
                     f"[PEDIDO] Pedido de cirurgia recebido para: {data.get('nome', '?')}",
                     "MAGENTA")
-                self.agent.pending_surgery_requests.append(data)
-                await self.dispatch_next_surgery()
+                if self.agent.enqueue_surgery_request(data):
+                    await self.dispatch_next_surgery()
+                else:
+                    log(COORD_CIR,
+                        f"[FILA-CIR] Pedido duplicado ignorado: {data.get('nome', '?')}",
+                        "YELLOW")
 
         async def run_surgery_contract_net(self, patient_data):
             """Contract-Net com blocos operatórios e médicos."""
@@ -164,9 +184,11 @@ class CoordenadorCirurgias(Agent):
                         "procedure": "surgery"
                     })
                     await self.send(notif)
+                return True
             else:
                 log(COORD_CIR,
                     f"[ALLOCATION-FAILED] No valid surgical resources available for {nome}.", "RED")
+                return False
 
     async def setup(self):
         log(COORD_CIR, "Coordenador de Cirurgias iniciado.", "MAGENTA")

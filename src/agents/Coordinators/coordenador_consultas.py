@@ -13,9 +13,17 @@ class CoordenadorConsultas(Agent):
         super().__init__(agent_jid, password, **kwargs)
         self.alocacoes = {}         # doente_jid → {medico, sala, nome}
         self.pending_requests = {s: [] for s in ROUTINE_SPECIALTIES}
+        self.pending_routine_patient_ids = set()
         self.routine_hold = False   # bloqueia rotina quando há urgências em espera
+        self.blocked_specialties = set()
 
     def add_pending_request(self, data, prepend=False):
+        doente_jid = data.get("doente_jid")
+        if not doente_jid:
+            return False
+        if doente_jid in self.pending_routine_patient_ids:
+            return False
+
         specialty = data.get("especialidade")
         if not specialty:
             specialty = ROUTINE_SPECIALTIES[0]
@@ -26,6 +34,8 @@ class CoordenadorConsultas(Agent):
             self.pending_requests[specialty].insert(0, data)
         else:
             self.pending_requests[specialty].append(data)
+        self.pending_routine_patient_ids.add(doente_jid)
+        return True
 
     def flatten_pending_requests(self):
         all_requests = []
@@ -43,7 +53,9 @@ class CoordenadorConsultas(Agent):
     def pop_pending_request(self, specialty):
         queue = self.pending_requests.get(specialty, [])
         if queue:
-            return queue.pop(0)
+            removed = queue.pop(0)
+            self.pending_routine_patient_ids.discard(removed.get("doente_jid"))
+            return removed
         return None
 
     def get_routine_waitlist_by_specialty(self):
@@ -75,6 +87,14 @@ class CoordenadorConsultas(Agent):
 
     class CoordinatorBehaviour(CyclicBehaviour):
 
+        def clear_routine_allocation(self, doente_jid):
+            if not doente_jid:
+                return False
+            if doente_jid in self.agent.alocacoes:
+                self.agent.alocacoes.pop(doente_jid, None)
+                return True
+            return False
+
         async def publish_waitlist(self):
             msg = Message(to=jid(SUPERVISOR))
             msg.set_metadata("performative", "inform")
@@ -103,15 +123,19 @@ class CoordenadorConsultas(Agent):
                 log(COORD_CONS,
                     f"[PEDIDO] Pedido de consulta de rotina recebido: {data['nome']}",
                     "GREEN")
-                self.agent.add_pending_request(data)
-                await self.publish_waitlist()
-                specialty = data.get("especialidade", "?")
-                queue_len = len(self.agent.pending_requests.get(specialty, []))
-                log(COORD_CONS,
-                    f"[FILA] Doente {data['nome']} adicionado à fila de rotina "
-                    f"(especialidade={specialty}, posição={queue_len}).",
-                    "YELLOW")
-                await self.dispatch_next_routine()
+                if self.agent.add_pending_request(data):
+                    await self.publish_waitlist()
+                    specialty = data.get("especialidade", "?")
+                    queue_len = len(self.agent.pending_requests.get(specialty, []))
+                    log(COORD_CONS,
+                        f"[FILA] Doente {data['nome']} adicionado à fila de rotina "
+                        f"(especialidade={specialty}, posição={queue_len}).",
+                        "YELLOW")
+                    await self.dispatch_next_routine()
+                else:
+                    log(COORD_CONS,
+                        f"[FILA] Pedido duplicado ignorado para {data.get('nome', '?')}.",
+                        "YELLOW")
 
             # ---- Ordem de preemption do Supervisor ----
             elif performative == "request" and msg_type == "preemption_order":
@@ -121,11 +145,26 @@ class CoordenadorConsultas(Agent):
 
             elif performative == "inform" and msg_type == "routine_gate":
                 data = json.loads(msg.body)
-                self.agent.routine_hold = bool(data.get("hold", False))
+                blocked = data.get("blocked_specialties")
+                if isinstance(blocked, list):
+                    self.agent.blocked_specialties = {s for s in blocked if s}
+                    self.agent.routine_hold = len(self.agent.blocked_specialties) > 0
+                else:
+                    self.agent.routine_hold = bool(data.get("hold", False))
+                    self.agent.blocked_specialties = set()
                 estado = "BLOQUEADA" if self.agent.routine_hold else "ATIVA"
                 log(COORD_CONS, f"[PRIORIDADE] Via de rotina agora: {estado}", "YELLOW")
                 if not self.agent.routine_hold:
                     await self.dispatch_next_routine()
+
+            elif performative == "inform" and msg_type == "routine_finished":
+                data = json.loads(msg.body)
+                doente_jid = data.get("doente_jid")
+                nome = data.get("nome", "?")
+                if self.clear_routine_allocation(doente_jid):
+                    log(COORD_CONS,
+                        f"[ALOCACAO-LIMPA] Consulta de rotina finalizada/removida para {nome}.",
+                        "YELLOW")
 
         async def handle_out_of_band_message(self, msg):
             """Processa mensagens que chegam durante a negociação e não pertencem ao thread atual."""
@@ -134,14 +173,18 @@ class CoordenadorConsultas(Agent):
 
             if performative == "request" and msg_type == "patient_request":
                 data = json.loads(msg.body)
-                self.agent.add_pending_request(data)
-                await self.publish_waitlist()
-                specialty = data.get("especialidade", "?")
-                queue_len = len(self.agent.pending_requests.get(specialty, []))
-                log(COORD_CONS,
-                    f"[FILA] Doente {data.get('nome', '?')} adicionado à fila de rotina "
-                    f"(especialidade={specialty}, posição={queue_len}).",
-                    "YELLOW")
+                if self.agent.add_pending_request(data):
+                    await self.publish_waitlist()
+                    specialty = data.get("especialidade", "?")
+                    queue_len = len(self.agent.pending_requests.get(specialty, []))
+                    log(COORD_CONS,
+                        f"[FILA] Doente {data.get('nome', '?')} adicionado à fila de rotina "
+                        f"(especialidade={specialty}, posição={queue_len}).",
+                        "YELLOW")
+                else:
+                    log(COORD_CONS,
+                        f"[FILA] Pedido duplicado ignorado para {data.get('nome', '?')}.",
+                        "YELLOW")
                 return
 
             if performative == "request" and msg_type == "preemption_order":
@@ -153,14 +196,30 @@ class CoordenadorConsultas(Agent):
 
             if performative == "inform" and msg_type == "routine_gate":
                 data = json.loads(msg.body)
-                self.agent.routine_hold = bool(data.get("hold", False))
+                blocked = data.get("blocked_specialties")
+                if isinstance(blocked, list):
+                    self.agent.blocked_specialties = {s for s in blocked if s}
+                    self.agent.routine_hold = len(self.agent.blocked_specialties) > 0
+                else:
+                    self.agent.routine_hold = bool(data.get("hold", False))
+                    self.agent.blocked_specialties = set()
                 estado = "BLOQUEADA" if self.agent.routine_hold else "ATIVA"
                 log(COORD_CONS, f"[PRIORIDADE] Via de rotina agora: {estado}", "YELLOW")
                 return
 
+            if performative == "inform" and msg_type == "routine_finished":
+                data = json.loads(msg.body)
+                doente_jid = data.get("doente_jid")
+                nome = data.get("nome", "?")
+                if self.clear_routine_allocation(doente_jid):
+                    log(COORD_CONS,
+                        f"[ALOCACAO-LIMPA] Consulta de rotina finalizada/removida para {nome}.",
+                        "YELLOW")
+                return
+
         async def dispatch_next_routine(self):
             """Despacha apenas o primeiro doente da fila de rotina (FCFS estrito)."""
-            if self.agent.routine_hold:
+            if self.agent.routine_hold and not self.agent.blocked_specialties:
                 log(COORD_CONS,
                     "[PRIORIDADE] Rotina temporariamente bloqueada: urgências em espera.",
                     "RED")
@@ -177,6 +236,14 @@ class CoordenadorConsultas(Agent):
             for specialty in ordered_specialties:
                 queue = self.agent.pending_requests.get(specialty, [])
                 if not queue:
+                    continue
+
+                if specialty in self.agent.blocked_specialties:
+                    log(
+                        COORD_CONS,
+                        f"[PRIORIDADE] Especialidade de rotina bloqueada por urgência: {specialty}.",
+                        "RED",
+                    )
                     continue
 
                 patient = queue[0]
@@ -222,7 +289,13 @@ class CoordenadorConsultas(Agent):
                 )
                 return False
 
-            if self.agent.routine_hold:
+            if requested_specialty in self.agent.blocked_specialties:
+                log(COORD_CONS,
+                    f"[PRIORIDADE] Alocação de rotina suspensa para {nome} (urgência em espera na especialidade {requested_specialty}).",
+                    "RED")
+                return False
+
+            if self.agent.routine_hold and not self.agent.blocked_specialties:
                 log(COORD_CONS,
                     f"[PRIORIDADE] Alocação de rotina suspensa para {nome} (urgência em espera).",
                     "RED")
@@ -286,7 +359,13 @@ class CoordenadorConsultas(Agent):
                         f"[PROPOSTA] Proposta rejeitada: {body.get('motivo', '?')}",
                         "YELLOW")
 
-            if self.agent.routine_hold:
+            if requested_specialty in self.agent.blocked_specialties:
+                log(COORD_CONS,
+                    f"[PRIORIDADE] Adjudicação de rotina cancelada para {nome} (urgência ativa na especialidade {requested_specialty}).",
+                    "RED")
+                return False
+
+            if self.agent.routine_hold and not self.agent.blocked_specialties:
                 log(COORD_CONS,
                     f"[PRIORIDADE] Adjudicação de rotina cancelada para {nome} (urgência ativa).",
                     "RED")

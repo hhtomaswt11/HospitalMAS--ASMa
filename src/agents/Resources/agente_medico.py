@@ -93,6 +93,15 @@ class AgenteMedico(ResourceAgent):
                 await self.send(msg_exame)
                 
                 log(self.agent.nome_medico, f"[TRANSITO] {nome} encaminhado para diagnóstico. A libertar Consultório para novo uso.", "CYAN")
+
+                msg_finish_cons = Message(to=jid(COORD_CONS))
+                msg_finish_cons.set_metadata("performative", "inform")
+                msg_finish_cons.set_metadata("type", "routine_finished")
+                msg_finish_cons.body = json.dumps({
+                    "doente_jid": doente_jid,
+                    "nome": nome,
+                })
+                await self.send(msg_finish_cons)
                 
                 # 1. Libertar sala de consulta IMEDIATAMENTE (o doente já saiu para o exame)
                 if self.agent.sala_atual:
@@ -152,6 +161,15 @@ class AgenteMedico(ResourceAgent):
                 log(self.agent.nome_medico, f"[CLÍNICA] Consulta de rotina para {nome} concluída. Alta médica concedida.", "BLUE")
                 self.agent.disponivel = True
                 self.agent.paciente_atual = None
+
+                msg_finish_cons = Message(to=jid(COORD_CONS))
+                msg_finish_cons.set_metadata("performative", "inform")
+                msg_finish_cons.set_metadata("type", "routine_finished")
+                msg_finish_cons.body = json.dumps({
+                    "doente_jid": doente_jid,
+                    "nome": nome,
+                })
+                await self.send(msg_finish_cons)
 
                 if self.patient_data.get("tipo") == "Urgencia" and random.random() < PROB_INTERNAMENTO_URGENT:
                     msg_int = Message(to=jid(COORD_INT))
@@ -276,7 +294,7 @@ class AgenteMedico(ResourceAgent):
                 log(agent.nome_medico, f"[CFP] Call for Proposal received for patient {data.get('nome', '?')}", "CYAN")
 
                 reply = msg.make_reply()
-                if (agent.disponivel or (agent.paciente_atual == data.get("doente_jid"))) and agent.can_handle_cfp(cfp_type, data):
+                if agent.disponivel and agent.can_handle_cfp(cfp_type, data):
                     reply.set_metadata("performative", "propose")
                     reply.body = json.dumps({
                         "medico_jid": str(agent.jid),

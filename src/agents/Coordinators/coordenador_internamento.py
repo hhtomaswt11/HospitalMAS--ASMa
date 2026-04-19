@@ -15,6 +15,17 @@ class CoordenadorInternamento(Agent):
     def __init__(self, agent_jid, password, **kwargs):
         super().__init__(agent_jid, password, **kwargs)
         self.pending_internments = []
+        self.pending_internment_patient_ids = set()
+
+    def enqueue_internment(self, data):
+        doente_jid = data.get("doente_jid")
+        if not doente_jid:
+            return False
+        if doente_jid in self.pending_internment_patient_ids:
+            return False
+        self.pending_internments.append(data)
+        self.pending_internment_patient_ids.add(doente_jid)
+        return True
 
     class InternamentoBehaviour(CyclicBehaviour):
         async def run(self):
@@ -29,10 +40,12 @@ class CoordenadorInternamento(Agent):
 
             if performative == "request" and msg_type == "internment_request":
                 data = json.loads(msg.body)
-                self.agent.pending_internments.append(data)
-                await self.publish_waitlist()
-                log(COORD_INT, f"[INTERNAMENTO] Pedido recebido para {data.get('nome', '?')}", "YELLOW")
-                await self.dispatch_next_internment()
+                if self.agent.enqueue_internment(data):
+                    await self.publish_waitlist()
+                    log(COORD_INT, f"[INTERNAMENTO] Pedido recebido para {data.get('nome', '?')}", "YELLOW")
+                    await self.dispatch_next_internment()
+                else:
+                    log(COORD_INT, f"[INTERNAMENTO] Pedido duplicado ignorado para {data.get('nome', '?')}", "YELLOW")
 
             elif performative == "inform" and msg_type == "internment_finished":
                 data = json.loads(msg.body)
@@ -63,7 +76,8 @@ class CoordenadorInternamento(Agent):
             patient = self.agent.pending_internments[0]
             allocated = await self.run_internment_contract_net(patient)
             if allocated:
-                self.agent.pending_internments.pop(0)
+                removed = self.agent.pending_internments.pop(0)
+                self.agent.pending_internment_patient_ids.discard(removed.get("doente_jid"))
                 await self.publish_waitlist()
 
         async def run_internment_contract_net(self, patient_data):
@@ -91,8 +105,8 @@ class CoordenadorInternamento(Agent):
                         and reply.get_metadata("type") == "internment_request"
                     ):
                         extra = json.loads(reply.body)
-                        self.agent.pending_internments.append(extra)
-                        await self.publish_waitlist()
+                        if self.agent.enqueue_internment(extra):
+                            await self.publish_waitlist()
                     continue
 
                 perf = reply.get_metadata("performative")

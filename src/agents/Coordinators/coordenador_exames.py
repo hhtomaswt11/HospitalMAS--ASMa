@@ -12,6 +12,17 @@ class CoordenadorExames(Agent):
     def __init__(self, agent_jid, password, **kwargs):
         super().__init__(agent_jid, password, **kwargs)
         self.pending_exam_requests = []
+        self.pending_exam_patient_ids = set()
+
+    def enqueue_exam_request(self, data):
+        doente_jid = data.get("doente_jid")
+        if not doente_jid:
+            return False
+        if doente_jid in self.pending_exam_patient_ids:
+            return False
+        self.pending_exam_requests.append(data)
+        self.pending_exam_patient_ids.add(doente_jid)
+        return True
 
 
     class ExamCoordinatorBehaviour(CyclicBehaviour):
@@ -22,10 +33,14 @@ class CoordenadorExames(Agent):
 
             if performative == "request" and msg_type == "exam_request":
                 data = json.loads(msg.body)
-                self.agent.pending_exam_requests.append(data)
-                log(COORD_EXAM,
-                    f"[FILA-EXAME] Pedido enfileirado fora de banda: {data.get('nome', '?')}",
-                    "YELLOW")
+                if self.agent.enqueue_exam_request(data):
+                    log(COORD_EXAM,
+                        f"[FILA-EXAME] Pedido enfileirado fora de banda: {data.get('nome', '?')}",
+                        "YELLOW")
+                else:
+                    log(COORD_EXAM,
+                        f"[FILA-EXAME] Pedido duplicado ignorado: {data.get('nome', '?')}",
+                        "YELLOW")
 
         async def dispatch_next_exam(self):
             if not self.agent.pending_exam_requests:
@@ -34,7 +49,8 @@ class CoordenadorExames(Agent):
             patient = self.agent.pending_exam_requests[0]
             allocated = await self.run_exam_contract_net(patient)
             if allocated:
-                self.agent.pending_exam_requests.pop(0)
+                removed = self.agent.pending_exam_requests.pop(0)
+                self.agent.pending_exam_patient_ids.discard(removed.get("doente_jid"))
 
         def get_exam_candidates(self, exam_specialty):
             equipamentos = [
@@ -66,8 +82,12 @@ class CoordenadorExames(Agent):
                 log(COORD_EXAM,
                     f"[PEDIDO] Pedido de diagnóstico MCDT recebido para: {data.get('nome', '?')}",
                     "CYAN")
-                self.agent.pending_exam_requests.append(data)
-                await self.dispatch_next_exam()
+                if self.agent.enqueue_exam_request(data):
+                    await self.dispatch_next_exam()
+                else:
+                    log(COORD_EXAM,
+                        f"[FILA-EXAME] Pedido duplicado ignorado: {data.get('nome', '?')}",
+                        "YELLOW")
 
             # Propostas chegam ao mesmo behaviour (sem template restritivo)
             # — tratadas dentro de run_exam_contract_net via receive().
@@ -191,10 +211,12 @@ class CoordenadorExames(Agent):
                         "procedure": "exam"
                     })
                     await self.send(notif)
+                return True
             else:
                 log(COORD_EXAM,
                     f"[ALLOCATION-FAILED] Sem alocação completa de exame para {nome} (esp={exam_specialty}).",
                     "RED")
+                return False
 
     async def setup(self):
         log(COORD_EXAM, "Coordenador de Exames iniciado.", "CYAN")
