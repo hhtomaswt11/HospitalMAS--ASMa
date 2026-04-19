@@ -54,6 +54,8 @@ class AgenteMedico(ResourceAgent):
         async def run(self):
             nome = self.patient_data.get("nome", "?")
             doente_jid = self.patient_data.get("doente_jid")
+            is_urgent = self.patient_data.get("tipo") == "Urgencia"
+            finish_coord = COORD_URG if is_urgent else COORD_CONS
             
             log(self.agent.nome_medico, f"[CLÍNICA] A iniciar avaliação clínica a {nome}...", "CYAN")
             
@@ -69,8 +71,8 @@ class AgenteMedico(ResourceAgent):
                 return
             
             # Lógica probabilística para exames e cirurgia baseada na configuração
-            is_urgent = self.patient_data.get("tipo") != "Normal"
-            prob_exam = PROB_EXAM_URGENT if is_urgent else PROB_EXAM_NORMAL
+            eval_is_urgent = self.patient_data.get("tipo") != "Normal"
+            prob_exam = PROB_EXAM_URGENT if eval_is_urgent else PROB_EXAM_NORMAL
             
             if random.random() < prob_exam:
                 exam_specialty = self.agent.choose_exam_specialty()
@@ -94,7 +96,7 @@ class AgenteMedico(ResourceAgent):
                 
                 log(self.agent.nome_medico, f"[TRANSITO] {nome} encaminhado para diagnóstico. A libertar Consultório para novo uso.", "CYAN")
 
-                msg_finish_cons = Message(to=jid(COORD_CONS))
+                msg_finish_cons = Message(to=jid(finish_coord))
                 msg_finish_cons.set_metadata("performative", "inform")
                 msg_finish_cons.set_metadata("type", "routine_finished")
                 msg_finish_cons.body = json.dumps({
@@ -102,6 +104,16 @@ class AgenteMedico(ResourceAgent):
                     "nome": nome,
                 })
                 await self.send(msg_finish_cons)
+
+                # Capturar referência ao equipamento ANTES de libertar o médico,
+                # para evitar race-condition se um novo paciente chegar durante o sleep.
+                mcdt_snapshot = self.agent.mcdt_atual
+                self.agent.mcdt_atual = None
+
+                # O médico de consulta fica livre enquanto o exame decorre noutro recurso.
+                self.agent.disponivel = True
+                self.agent.paciente_atual = None
+                await self.agent.send_status(self)
                 
                 # 1. Libertar sala de consulta IMEDIATAMENTE (o doente já saiu para o exame)
                 if self.agent.sala_atual:
@@ -118,13 +130,12 @@ class AgenteMedico(ResourceAgent):
                     log(self.agent.nome_medico, f"[CLÍNICA] Resultados de diagnóstico recebidos para {nome}. A solicitar intervenção cirúrgica urgente.", "MAGENTA")
                     
                     # 3. Libertar equipamento de diagnóstico (MCDT concluído)
-                    if self.agent.mcdt_atual:
-                        msg_free_mcdt = Message(to=self.agent.mcdt_atual)
+                    if mcdt_snapshot:
+                        msg_free_mcdt = Message(to=mcdt_snapshot)
                         msg_free_mcdt.set_metadata("performative", "inform")
                         msg_free_mcdt.set_metadata("type", "release")
                         await self.send(msg_free_mcdt)
-                        log(self.agent.nome_medico, f"[SYNC] Equipamento {self.agent.mcdt_atual} libertado.", "CYAN")
-                        self.agent.mcdt_atual = None
+                        log(self.agent.nome_medico, f"[SYNC] Equipamento {mcdt_snapshot} libertado.", "CYAN")
                     
                     # 4. Solicitar Bloco Operatório
                     msg_cirurgia = Message(to=jid(COORD_CIR))
@@ -137,41 +148,26 @@ class AgenteMedico(ResourceAgent):
                         "solicitante": str(self.agent.jid)
                     })
                     await self.send(msg_cirurgia)
-
-                    # Handoff para cirurgia: este médico deixa de estar associado ao doente.
-                    self.agent.disponivel = True
-                    self.agent.paciente_atual = None
-                    await self.agent.send_status(self)
                 else:
                     log(self.agent.nome_medico, f"[CLÍNICA] Resultados de diagnóstico para {nome} normais. Alta médica concedida.", "BLUE")
-                    self.agent.disponivel = True
-                    self.agent.paciente_atual = None
                     
                     # Libertar equipamento de diagnóstico (MCDT concluído)
-                    if self.agent.mcdt_atual:
-                        msg_free_mcdt = Message(to=self.agent.mcdt_atual)
+                    if mcdt_snapshot:
+                        msg_free_mcdt = Message(to=mcdt_snapshot)
                         msg_free_mcdt.set_metadata("performative", "inform")
                         msg_free_mcdt.set_metadata("type", "release")
                         await self.send(msg_free_mcdt)
-                        self.agent.mcdt_atual = None
-
-                    # Notificar status final
-                    await self.agent.send_status(self)
             else:
-                log(self.agent.nome_medico, f"[CLÍNICA] Consulta de rotina para {nome} concluída. Alta médica concedida.", "BLUE")
-                self.agent.disponivel = True
-                self.agent.paciente_atual = None
+                if is_urgent:
+                    log(self.agent.nome_medico, f"[CLÍNICA] Avaliação urgente para {nome} concluída.", "BLUE")
+                else:
+                    log(self.agent.nome_medico, f"[CLÍNICA] Consulta de rotina para {nome} concluída. Alta médica concedida.", "BLUE")
 
-                msg_finish_cons = Message(to=jid(COORD_CONS))
-                msg_finish_cons.set_metadata("performative", "inform")
-                msg_finish_cons.set_metadata("type", "routine_finished")
-                msg_finish_cons.body = json.dumps({
-                    "doente_jid": doente_jid,
-                    "nome": nome,
-                })
-                await self.send(msg_finish_cons)
+                # Decidir internamento ANTES de libertar o médico,
+                # para que o médico não receba novo CFP enquanto ainda está a encaminhar o doente.
+                needs_internment = is_urgent and random.random() < PROB_INTERNAMENTO_URGENT
 
-                if self.patient_data.get("tipo") == "Urgencia" and random.random() < PROB_INTERNAMENTO_URGENT:
+                if needs_internment:
                     msg_int = Message(to=jid(COORD_INT))
                     msg_int.set_metadata("performative", "request")
                     msg_int.set_metadata("type", "internment_request")
@@ -182,8 +178,22 @@ class AgenteMedico(ResourceAgent):
                     })
                     await self.send(msg_int)
                     log(self.agent.nome_medico, f"[CLINICA] {nome} encaminhado para internamento.", "YELLOW")
-                
+                elif is_urgent:
+                    log(self.agent.nome_medico, f"[CLÍNICA] {nome} estabilizado(a). Alta médica concedida.", "BLUE")
+
+                # Agora sim, libertar o médico e notificar o coordenador.
+                self.agent.disponivel = True
+                self.agent.paciente_atual = None
                 await self.agent.send_status(self)
+
+                msg_finish_cons = Message(to=jid(finish_coord))
+                msg_finish_cons.set_metadata("performative", "inform")
+                msg_finish_cons.set_metadata("type", "routine_finished")
+                msg_finish_cons.body = json.dumps({
+                    "doente_jid": doente_jid,
+                    "nome": nome,
+                })
+                await self.send(msg_finish_cons)
 
                 # Libertar sala de consulta normal
                 if self.agent.sala_atual:
@@ -352,6 +362,7 @@ class AgenteMedico(ResourceAgent):
                 prev = agent.paciente_atual
                 agent.disponivel = True
                 agent.paciente_atual = None
+                agent.sala_atual = None
                 log(agent.nome_medico, f"[PREEMPTION] Preemption triggered. Resource freed (previous patient ID: {prev}).", "RED")
                 await self.agent.send_status(self)
 

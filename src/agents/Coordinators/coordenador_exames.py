@@ -110,7 +110,7 @@ class CoordenadorExames(Agent):
                     f"[ALLOCATION-FAILED] Sem recursos compatíveis para exame {exam_specialty} de {nome}.",
                     "RED",
                 )
-                return
+                return False
 
             # 1) CFP a todos os equipamentos
             for eq_jid in equipamentos:
@@ -134,8 +134,8 @@ class CoordenadorExames(Agent):
             # 2) Aguardar respostas
             await asyncio.sleep(CONTRACT_NET_RESPONSE_WAIT_SECONDS)
 
-            equipamento_proposta = None
-            medico_proposta = None
+            equipamento_propostas = []
+            medico_propostas = []
 
             for _ in range(len(equipamentos) + len(medicos_exame)):
                 reply = await self.receive(timeout=COORDINATOR_PROPOSAL_TIMEOUT_SECONDS)
@@ -151,14 +151,14 @@ class CoordenadorExames(Agent):
 
                 if perf == "propose":
                     if "sala_jid" in body:
-                        equipamento_proposta = body
+                        equipamento_propostas.append(body)
                         log(
                             COORD_EXAM,
                             f"[PROPOSTA] Proposta de equipamento: {body.get('nome_sala', '?')}",
                             "CYAN",
                         )
                     elif "medico_jid" in body:
-                        medico_proposta = body
+                        medico_propostas.append(body)
                         log(
                             COORD_EXAM,
                             f"[PROPOSTA] Proposta de médico: {body.get('nome_medico', '?')}",
@@ -170,6 +170,9 @@ class CoordenadorExames(Agent):
                         "YELLOW")
 
             # 3) Adjudicar
+            equipamento_proposta = equipamento_propostas[-1] if equipamento_propostas else None
+            medico_proposta = medico_propostas[-1] if medico_propostas else None
+
             if equipamento_proposta and medico_proposta:
                 acc_eq = Message(to=equipamento_proposta["sala_jid"])
                 acc_eq.set_metadata("performative", "accept-proposal")
@@ -190,6 +193,33 @@ class CoordenadorExames(Agent):
                 })
                 acc_med.thread = doente_jid
                 await self.send(acc_med)
+
+                # Rejeitar os proponentes não selecionados.
+                for proposta in equipamento_propostas:
+                    sala_jid = proposta.get("sala_jid")
+                    if not sala_jid or sala_jid == equipamento_proposta["sala_jid"]:
+                        continue
+                    rej = Message(to=sala_jid)
+                    rej.set_metadata("performative", "reject-proposal")
+                    rej.body = json.dumps({
+                        "motivo": "Proposta não selecionada",
+                        "doente_jid": doente_jid,
+                    })
+                    rej.thread = doente_jid
+                    await self.send(rej)
+
+                for proposta in medico_propostas:
+                    medico_jid = proposta.get("medico_jid")
+                    if not medico_jid or medico_jid == medico_proposta["medico_jid"]:
+                        continue
+                    rej = Message(to=medico_jid)
+                    rej.set_metadata("performative", "reject-proposal")
+                    rej.body = json.dumps({
+                        "motivo": "Proposta não selecionada",
+                        "doente_jid": doente_jid,
+                    })
+                    rej.thread = doente_jid
+                    await self.send(rej)
 
                 log(COORD_EXAM,
                     f"[ALOCAÇÃO] DIAGNÓSTICO AGENDADO: {nome} → "

@@ -48,7 +48,6 @@ COORD_EXAM = "coord_exames"
 COORD_CIR = "coord_cirurgias"
 COORD_TRI = "coord_triagem"
 COORD_INT = "coord_internamento"
-TRIAGEM = COORD_TRI
 SUPERVISOR = "supervisor"
 
 SALA_TRIAGEM1 = "sala_triagem1"
@@ -65,10 +64,6 @@ SALA_TAC1 = "sala_tac1"
 SALA_TAC2 = "sala_tac2"
 SALA_ANALISES1 = "sala_analises1"
 SALA_ANALISES2 = "sala_analises2"
-
-# Compatibilidade com nomes antigos
-SALA_RAIOX = SALA_RAIOX1
-SALA_TAC = SALA_TAC1
 
 BLOCO_OPERATORIO1 = "bloco_operatorio1"
 BLOCO_OPERATORIO2 = "bloco_operatorio2"
@@ -101,12 +96,6 @@ SURGERY_DURATION_SECONDS = 8
 EXAM_DURATION_SECONDS = 5
 TRIAGE_CLASSIFICATION_SECONDS = 2
 
-MAIN_STARTUP_STABILIZATION_SECONDS = 2
-MAIN_PHASE_GAP_SECONDS = 2
-MAIN_POST_PHASE2_WAIT_SECONDS = 8
-MAIN_URGENT_FLOW_WAIT_SECONDS = 15
-MAIN_CASCADE_WAIT_SECONDS = 20
-
 SIM_INFRA_READY_WAIT_SECONDS = 2
 SIM_PROGRESS_TICK_SECONDS = 5
 
@@ -129,7 +118,7 @@ SPECIALTY_CIRURGIA = "cirurgia"
 SPECIALTY_PEDIATRIA = "pediatria"
 SPECIALTY_ORTOPEDIA = "ortopedia"
 SPECIALTY_CARDIOLOGIA = "cardiologia"
-SPECIALITY_TRIAGEM = "triagem"
+SPECIALTY_TRIAGEM = "triagem"
 
 ROUTINE_SPECIALTIES = [
     SPECIALTY_PEDIATRIA,
@@ -237,14 +226,14 @@ AGENT_REGISTRY = {
         "type": "Triagem",
         "role": "triage_medic",
         "zone": "triage",
-        "specialty": SPECIALITY_TRIAGEM,
+        "specialty": SPECIALTY_TRIAGEM,
     },
     jid(MEDICO_TRIAGEM2): {
         "name": "Dra. Leonor Viana",
         "type": "Triagem",
         "role": "triage_medic",
         "zone": "triage",
-        "specialty": SPECIALITY_TRIAGEM,
+        "specialty": SPECIALTY_TRIAGEM,
     },
 
     jid(SALA1): {"name": "Consultorio 1", "wing": "primary", "role": "room"},

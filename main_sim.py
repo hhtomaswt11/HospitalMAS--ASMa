@@ -24,17 +24,14 @@ async def spawn_patient(type_entry):
     
     if type_entry == "Normal":
         specialty = random.choice(ROUTINE_SPECIALTIES)
-        priority = None
     else:
         specialty = None
-        priority = None
 
     patient = AgenteDoente(
         jid_str, PASSWORD,
         nome_doente=name,
         tipo_entrada=type_entry,
-        especialidade=specialty,
-        prioridade=priority
+        especialidade=specialty
     )
     await patient.start(auto_register=True)
     return patient

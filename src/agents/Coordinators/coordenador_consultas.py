@@ -106,6 +106,50 @@ class CoordenadorConsultas(Agent):
             })
             await self.send(msg)
 
+        async def process_patient_request(self, data, dispatch_after=False):
+            if self.agent.add_pending_request(data):
+                await self.publish_waitlist()
+                specialty = data.get("especialidade", "?")
+                queue_len = len(self.agent.pending_requests.get(specialty, []))
+                log(COORD_CONS,
+                    f"[FILA] Doente {data.get('nome', '?')} adicionado à fila de rotina "
+                    f"(especialidade={specialty}, posição={queue_len}).",
+                    "YELLOW")
+                if dispatch_after:
+                    await self.dispatch_next_routine()
+            else:
+                log(COORD_CONS,
+                    f"[FILA] Pedido duplicado ignorado para {data.get('nome', '?')}.",
+                    "YELLOW")
+
+        async def process_preemption_order(self, data, dispatch_after=False, force_hold=False):
+            if force_hold:
+                self.agent.routine_hold = True
+            await self.handle_preemption(data)
+            if dispatch_after:
+                await self.dispatch_next_routine()
+
+        async def process_routine_gate(self, data, dispatch_after=False):
+            blocked = data.get("blocked_specialties")
+            if isinstance(blocked, list):
+                self.agent.blocked_specialties = {s for s in blocked if s}
+                self.agent.routine_hold = len(self.agent.blocked_specialties) > 0
+            else:
+                self.agent.routine_hold = bool(data.get("hold", False))
+                self.agent.blocked_specialties = set()
+            estado = "BLOQUEADA" if self.agent.routine_hold else "ATIVA"
+            log(COORD_CONS, f"[PRIORIDADE] Via de rotina agora: {estado}", "YELLOW")
+            if dispatch_after and not self.agent.routine_hold:
+                await self.dispatch_next_routine()
+
+        async def process_routine_finished(self, data):
+            doente_jid = data.get("doente_jid")
+            nome = data.get("nome", "?")
+            if self.clear_routine_allocation(doente_jid):
+                log(COORD_CONS,
+                    f"[ALOCACAO-LIMPA] Consulta de rotina finalizada/removida para {nome}.",
+                    "YELLOW")
+
 
         async def run(self):
             msg = await self.receive(timeout=COORDINATOR_RECEIVE_TIMEOUT_SECONDS)
@@ -123,48 +167,20 @@ class CoordenadorConsultas(Agent):
                 log(COORD_CONS,
                     f"[PEDIDO] Pedido de consulta de rotina recebido: {data['nome']}",
                     "GREEN")
-                if self.agent.add_pending_request(data):
-                    await self.publish_waitlist()
-                    specialty = data.get("especialidade", "?")
-                    queue_len = len(self.agent.pending_requests.get(specialty, []))
-                    log(COORD_CONS,
-                        f"[FILA] Doente {data['nome']} adicionado à fila de rotina "
-                        f"(especialidade={specialty}, posição={queue_len}).",
-                        "YELLOW")
-                    await self.dispatch_next_routine()
-                else:
-                    log(COORD_CONS,
-                        f"[FILA] Pedido duplicado ignorado para {data.get('nome', '?')}.",
-                        "YELLOW")
+                await self.process_patient_request(data, dispatch_after=True)
 
             # ---- Ordem de preemption do Supervisor ----
             elif performative == "request" and msg_type == "preemption_order":
                 data = json.loads(msg.body)
-                await self.handle_preemption(data)
-                await self.dispatch_next_routine()
+                await self.process_preemption_order(data, dispatch_after=True)
 
             elif performative == "inform" and msg_type == "routine_gate":
                 data = json.loads(msg.body)
-                blocked = data.get("blocked_specialties")
-                if isinstance(blocked, list):
-                    self.agent.blocked_specialties = {s for s in blocked if s}
-                    self.agent.routine_hold = len(self.agent.blocked_specialties) > 0
-                else:
-                    self.agent.routine_hold = bool(data.get("hold", False))
-                    self.agent.blocked_specialties = set()
-                estado = "BLOQUEADA" if self.agent.routine_hold else "ATIVA"
-                log(COORD_CONS, f"[PRIORIDADE] Via de rotina agora: {estado}", "YELLOW")
-                if not self.agent.routine_hold:
-                    await self.dispatch_next_routine()
+                await self.process_routine_gate(data, dispatch_after=True)
 
             elif performative == "inform" and msg_type == "routine_finished":
                 data = json.loads(msg.body)
-                doente_jid = data.get("doente_jid")
-                nome = data.get("nome", "?")
-                if self.clear_routine_allocation(doente_jid):
-                    log(COORD_CONS,
-                        f"[ALOCACAO-LIMPA] Consulta de rotina finalizada/removida para {nome}.",
-                        "YELLOW")
+                await self.process_routine_finished(data)
 
         async def handle_out_of_band_message(self, msg):
             """Processa mensagens que chegam durante a negociação e não pertencem ao thread atual."""
@@ -173,48 +189,22 @@ class CoordenadorConsultas(Agent):
 
             if performative == "request" and msg_type == "patient_request":
                 data = json.loads(msg.body)
-                if self.agent.add_pending_request(data):
-                    await self.publish_waitlist()
-                    specialty = data.get("especialidade", "?")
-                    queue_len = len(self.agent.pending_requests.get(specialty, []))
-                    log(COORD_CONS,
-                        f"[FILA] Doente {data.get('nome', '?')} adicionado à fila de rotina "
-                        f"(especialidade={specialty}, posição={queue_len}).",
-                        "YELLOW")
-                else:
-                    log(COORD_CONS,
-                        f"[FILA] Pedido duplicado ignorado para {data.get('nome', '?')}.",
-                        "YELLOW")
+                await self.process_patient_request(data, dispatch_after=False)
                 return
 
             if performative == "request" and msg_type == "preemption_order":
                 data = json.loads(msg.body)
-                # Bloquear rotina imediatamente para impedir adjudicações indevidas.
-                self.agent.routine_hold = True
-                await self.handle_preemption(data)
+                await self.process_preemption_order(data, dispatch_after=False, force_hold=True)
                 return
 
             if performative == "inform" and msg_type == "routine_gate":
                 data = json.loads(msg.body)
-                blocked = data.get("blocked_specialties")
-                if isinstance(blocked, list):
-                    self.agent.blocked_specialties = {s for s in blocked if s}
-                    self.agent.routine_hold = len(self.agent.blocked_specialties) > 0
-                else:
-                    self.agent.routine_hold = bool(data.get("hold", False))
-                    self.agent.blocked_specialties = set()
-                estado = "BLOQUEADA" if self.agent.routine_hold else "ATIVA"
-                log(COORD_CONS, f"[PRIORIDADE] Via de rotina agora: {estado}", "YELLOW")
+                await self.process_routine_gate(data, dispatch_after=False)
                 return
 
             if performative == "inform" and msg_type == "routine_finished":
                 data = json.loads(msg.body)
-                doente_jid = data.get("doente_jid")
-                nome = data.get("nome", "?")
-                if self.clear_routine_allocation(doente_jid):
-                    log(COORD_CONS,
-                        f"[ALOCACAO-LIMPA] Consulta de rotina finalizada/removida para {nome}.",
-                        "YELLOW")
+                await self.process_routine_finished(data)
                 return
 
         async def dispatch_next_routine(self):
@@ -327,8 +317,8 @@ class CoordenadorConsultas(Agent):
             # 3) Aguardar e recolher propostas
             await asyncio.sleep(CONTRACT_NET_RESPONSE_WAIT_SECONDS)  # tempo para respostas chegarem
 
-            medico_proposta = None
-            sala_proposta = None
+            medico_propostas = []
+            sala_propostas = []
             expected_replies = len(medicos_candidatos) + len(SALAS)
 
             for _ in range(expected_replies):
@@ -345,12 +335,12 @@ class CoordenadorConsultas(Agent):
 
                 if perf == "propose":
                     if "medico_jid" in body:
-                        medico_proposta = body
+                        medico_propostas.append(body)
                         log(COORD_CONS,
                             f"Proposta de médico recebida: "
                             f"{body['nome_medico']}", "GREEN")
                     elif "sala_jid" in body:
-                        sala_proposta = body
+                        sala_propostas.append(body)
                         log(COORD_CONS,
                             f"Proposta de sala recebida: "
                             f"{body['nome_sala']}", "GREEN")
@@ -372,6 +362,9 @@ class CoordenadorConsultas(Agent):
                 return False
 
             # 4) Adjudicar ou recusar
+            medico_proposta = medico_propostas[-1] if medico_propostas else None
+            sala_proposta = sala_propostas[-1] if sala_propostas else None
+
             if medico_proposta and sala_proposta:
                 # Aceitar médico
                 acc_m = Message(to=medico_proposta["medico_jid"])
@@ -395,6 +388,33 @@ class CoordenadorConsultas(Agent):
                 })
                 acc_s.thread = doente_jid
                 await self.send(acc_s)
+
+                # Rejeitar os proponentes não selecionados.
+                for proposta in medico_propostas:
+                    medico_jid = proposta.get("medico_jid")
+                    if not medico_jid or medico_jid == medico_proposta["medico_jid"]:
+                        continue
+                    rej = Message(to=medico_jid)
+                    rej.set_metadata("performative", "reject-proposal")
+                    rej.body = json.dumps({
+                        "motivo": "Proposta não selecionada",
+                        "doente_jid": doente_jid,
+                    })
+                    rej.thread = doente_jid
+                    await self.send(rej)
+
+                for proposta in sala_propostas:
+                    sala_jid = proposta.get("sala_jid")
+                    if not sala_jid or sala_jid == sala_proposta["sala_jid"]:
+                        continue
+                    rej = Message(to=sala_jid)
+                    rej.set_metadata("performative", "reject-proposal")
+                    rej.body = json.dumps({
+                        "motivo": "Proposta não selecionada",
+                        "doente_jid": doente_jid,
+                    })
+                    rej.thread = doente_jid
+                    await self.send(rej)
 
                 # Registar alocação
                 agent.alocacoes[doente_jid] = {

@@ -113,8 +113,8 @@ class CoordenadorCirurgias(Agent):
             # 3) Aguardar respostas
             await asyncio.sleep(CONTRACT_NET_RESPONSE_WAIT_SECONDS)
 
-            bloco_proposta  = None
-            medico_proposta = None
+            bloco_propostas = []
+            medico_propostas = []
             expected_replies = len(BLOCOS) + len(medicos_cirurgia)
 
             for _ in range(expected_replies):
@@ -131,12 +131,12 @@ class CoordenadorCirurgias(Agent):
 
                 if perf == "propose":
                     if "sala_jid" in body:
-                        bloco_proposta = body
+                        bloco_propostas.append(body)
                         log(COORD_CIR,
                             f"[PROPOSAL] Proposta recebida da sala: "
                             f"{body.get('nome_sala', '?')}", "MAGENTA")
                     elif "medico_jid" in body:
-                        medico_proposta = body
+                        medico_propostas.append(body)
                         log(COORD_CIR,
                             f"[PROPOSAL] Proposta recebida do cirurgião: "
                             f"{body.get('nome_medico', '?')}", "MAGENTA")
@@ -146,6 +146,9 @@ class CoordenadorCirurgias(Agent):
                         "YELLOW")
 
             # 4) Adjudicar bloco + médico
+            bloco_proposta = bloco_propostas[-1] if bloco_propostas else None
+            medico_proposta = medico_propostas[-1] if medico_propostas else None
+
             if bloco_proposta and medico_proposta:
                 acc_b = Message(to=bloco_proposta["sala_jid"])
                 acc_b.set_metadata("performative", "accept-proposal")
@@ -165,6 +168,33 @@ class CoordenadorCirurgias(Agent):
                 })
                 acc_m.thread = doente_jid
                 await self.send(acc_m)
+
+                # Rejeitar os proponentes não selecionados.
+                for proposta in bloco_propostas:
+                    sala_jid = proposta.get("sala_jid")
+                    if not sala_jid or sala_jid == bloco_proposta["sala_jid"]:
+                        continue
+                    rej = Message(to=sala_jid)
+                    rej.set_metadata("performative", "reject-proposal")
+                    rej.body = json.dumps({
+                        "motivo": "Proposta não selecionada",
+                        "doente_jid": doente_jid,
+                    })
+                    rej.thread = doente_jid
+                    await self.send(rej)
+
+                for proposta in medico_propostas:
+                    medico_jid = proposta.get("medico_jid")
+                    if not medico_jid or medico_jid == medico_proposta["medico_jid"]:
+                        continue
+                    rej = Message(to=medico_jid)
+                    rej.set_metadata("performative", "reject-proposal")
+                    rej.body = json.dumps({
+                        "motivo": "Proposta não selecionada",
+                        "doente_jid": doente_jid,
+                    })
+                    rej.thread = doente_jid
+                    await self.send(rej)
 
                 log(COORD_CIR,
                     f"[ALOCAÇÃO] CIRURGIA AGENDADA: {nome} → "

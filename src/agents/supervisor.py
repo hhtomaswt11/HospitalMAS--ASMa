@@ -28,8 +28,8 @@ def dump_state():
                 "logs": RECENT_LOGS,
                 "registry": AGENT_REGISTRY
             }, f, ensure_ascii=False)
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[SUPERVISOR] dump_state failed: {exc}")
 
 _original_log = log
 def log(agent_name, message, color="WHITE"):

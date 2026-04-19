@@ -54,6 +54,16 @@ class CoordenadorUrgencias(Agent):
 
     class EmergencyCoordinatorBehaviour(CyclicBehaviour):
 
+        async def send_routine_unblock(self):
+            gate = Message(to=jid(COORD_CONS))
+            gate.set_metadata("performative", "inform")
+            gate.set_metadata("type", "routine_gate")
+            gate.body = json.dumps({
+                "blocked_specialties": [],
+                "hold": False,
+            })
+            await self.send(gate)
+
         async def handle_out_of_band_message(self, msg):
             performative = msg.get_metadata("performative")
             msg_type = msg.get_metadata("type")
@@ -109,6 +119,8 @@ class CoordenadorUrgencias(Agent):
                 self.agent.pending_urgency_patient_ids.discard(removed.get("doente_jid"))
                 self.agent.preemption_requested_patient_ids.discard(removed.get("doente_jid"))
                 await self.publish_waitlist()
+                if not self.agent.pending_urgencies:
+                    await self.send_routine_unblock()
             else:
                 doente_jid = patient.get("doente_jid")
                 if doente_jid and doente_jid not in self.agent.preemption_requested_patient_ids:
@@ -224,8 +236,8 @@ class CoordenadorUrgencias(Agent):
             # 3) Recolher propostas
             await asyncio.sleep(CONTRACT_NET_RESPONSE_WAIT_SECONDS)
 
-            medico_proposta = None
-            sala_proposta = None
+            medico_propostas = []
+            sala_propostas = []
             expected_replies = len(medicos_candidatos) + len(SALAS)
 
             for _ in range(expected_replies):
@@ -242,12 +254,12 @@ class CoordenadorUrgencias(Agent):
 
                 if perf == "propose":
                     if "medico_jid" in body:
-                        medico_proposta = body
+                        medico_propostas.append(body)
                         log(COORD_URG,
                             f"[PROPOSTA] Proposta recebida de: {body['nome_medico']}",
                             "GREEN")
                     elif "sala_jid" in body:
-                        sala_proposta = body
+                        sala_propostas.append(body)
                         log(COORD_URG,
                             f"[PROPOSTA] Proposta recebida de: {body['nome_sala']}",
                             "GREEN")
@@ -257,6 +269,9 @@ class CoordenadorUrgencias(Agent):
                         "YELLOW")
 
             # 4) Adjudicar
+            medico_proposta = medico_propostas[-1] if medico_propostas else None
+            sala_proposta = sala_propostas[-1] if sala_propostas else None
+
             if medico_proposta and sala_proposta:
                 acc_m = Message(to=medico_proposta["medico_jid"])
                 acc_m.set_metadata("performative", "accept-proposal")
@@ -278,6 +293,33 @@ class CoordenadorUrgencias(Agent):
                 })
                 acc_s.thread = doente_jid
                 await self.send(acc_s)
+
+                # Rejeitar os proponentes não selecionados.
+                for proposta in medico_propostas:
+                    medico_jid = proposta.get("medico_jid")
+                    if not medico_jid or medico_jid == medico_proposta["medico_jid"]:
+                        continue
+                    rej = Message(to=medico_jid)
+                    rej.set_metadata("performative", "reject-proposal")
+                    rej.body = json.dumps({
+                        "motivo": "Proposta não selecionada",
+                        "doente_jid": doente_jid,
+                    })
+                    rej.thread = doente_jid
+                    await self.send(rej)
+
+                for proposta in sala_propostas:
+                    sala_jid = proposta.get("sala_jid")
+                    if not sala_jid or sala_jid == sala_proposta["sala_jid"]:
+                        continue
+                    rej = Message(to=sala_jid)
+                    rej.set_metadata("performative", "reject-proposal")
+                    rej.body = json.dumps({
+                        "motivo": "Proposta não selecionada",
+                        "doente_jid": doente_jid,
+                    })
+                    rej.thread = doente_jid
+                    await self.send(rej)
 
                 log(COORD_URG,
                     f"[ALOCAÇÃO] EMERGÊNCIA AGENDADA: {nome} → "
