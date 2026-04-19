@@ -30,7 +30,7 @@ class CoordenadorTriagem(Agent):
             msg = await self.receive(timeout=COORDINATOR_RECEIVE_TIMEOUT_SECONDS)
             if msg is None:
                 if self.agent.pending_triage:
-                    await self.dispatch_next_triage()
+                    await self.dispatch_triage_batch()
                 return
 
             performative = msg.get_metadata("performative")
@@ -41,7 +41,7 @@ class CoordenadorTriagem(Agent):
                 log(COORD_TRI, f"[TRIAGEM] Pedido de urgencia recebido: {data.get('nome', '?')}", "YELLOW")
                 if self.agent.enqueue_triage_request(data):
                     await self.publish_waitlist()
-                    await self.dispatch_next_triage()
+                    await self.dispatch_triage_batch()
                 else:
                     log(COORD_TRI, f"[TRIAGEM] Pedido duplicado ignorado: {data.get('nome', '?')}", "YELLOW")
 
@@ -65,7 +65,7 @@ class CoordenadorTriagem(Agent):
 
         async def dispatch_next_triage(self):
             if not self.agent.pending_triage:
-                return
+                return False
 
             patient = self.agent.pending_triage[0]
             allocated = await self.run_triage_contract_net(patient)
@@ -73,6 +73,16 @@ class CoordenadorTriagem(Agent):
                 removed = self.agent.pending_triage.pop(0)
                 self.agent.pending_triage_patient_ids.discard(removed.get("doente_jid"))
                 await self.publish_waitlist()
+                return True
+            return False
+
+        async def dispatch_triage_batch(self, max_dispatches=DISPATCH_BATCH_LIMIT):
+            dispatched = 0
+            while dispatched < max_dispatches and self.agent.pending_triage:
+                allocated = await self.dispatch_next_triage()
+                if not allocated:
+                    break
+                dispatched += 1
 
         async def run_triage_contract_net(self, patient_data):
             nome = patient_data.get("nome", "?")
@@ -94,16 +104,24 @@ class CoordenadorTriagem(Agent):
                 cfp.thread = doente_jid
                 await self.send(cfp)
 
-            await asyncio.sleep(TRIAGE_CONTRACT_NET_RESPONSE_WAIT_SECONDS)
-
-            medico_proposta = None
-            sala_proposta = None
+            medico_propostas = []
+            sala_propostas = []
             expected_replies = len(MEDICOS_TRIAGEM) + len(SALAS_TRIAGEM)
 
-            for _ in range(expected_replies):
-                reply = await self.receive(timeout=TRIAGE_CONTRACT_NET_PROPOSAL_TIMEOUT_SECONDS)
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + TRIAGE_CONTRACT_NET_RESPONSE_WAIT_SECONDS
+            received_replies = 0
+
+            while received_replies < expected_replies:
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    break
+
+                reply = await self.receive(timeout=remaining)
                 if reply is None:
-                    continue
+                    break
+
+                received_replies += 1
                 if reply.thread != doente_jid:
                     if (
                         reply.get_metadata("performative") == "request"
@@ -118,9 +136,20 @@ class CoordenadorTriagem(Agent):
                 body = json.loads(reply.body)
                 if perf == "propose":
                     if "medico_jid" in body:
-                        medico_proposta = body
+                        medico_propostas.append(body)
                     elif "sala_jid" in body:
-                        sala_proposta = body
+                        sala_propostas.append(body)
+
+                if medico_propostas and sala_propostas:
+                    log(
+                        COORD_TRI,
+                        f"[CONTRACT-NET] Early-stop ativado para {nome}: par triagem encontrado.",
+                        "YELLOW",
+                    )
+                    break
+
+            medico_proposta = medico_propostas[0] if medico_propostas else None
+            sala_proposta = sala_propostas[0] if sala_propostas else None
 
             if medico_proposta and sala_proposta:
                 acc_m = Message(to=medico_proposta["medico_jid"])

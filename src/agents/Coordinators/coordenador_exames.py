@@ -44,13 +44,23 @@ class CoordenadorExames(Agent):
 
         async def dispatch_next_exam(self):
             if not self.agent.pending_exam_requests:
-                return
+                return False
 
             patient = self.agent.pending_exam_requests[0]
             allocated = await self.run_exam_contract_net(patient)
             if allocated:
                 removed = self.agent.pending_exam_requests.pop(0)
                 self.agent.pending_exam_patient_ids.discard(removed.get("doente_jid"))
+                return True
+            return False
+
+        async def dispatch_exam_batch(self, max_dispatches=DISPATCH_BATCH_LIMIT):
+            dispatched = 0
+            while dispatched < max_dispatches and self.agent.pending_exam_requests:
+                allocated = await self.dispatch_next_exam()
+                if not allocated:
+                    break
+                dispatched += 1
 
         def get_exam_candidates(self, exam_specialty):
             equipamentos = [
@@ -70,7 +80,7 @@ class CoordenadorExames(Agent):
             msg = await self.receive(timeout=COORDINATOR_RECEIVE_TIMEOUT_SECONDS)
             if msg is None:
                 if self.agent.pending_exam_requests:
-                    await self.dispatch_next_exam()
+                    await self.dispatch_exam_batch()
                 return
 
             performative = msg.get_metadata("performative")
@@ -83,7 +93,7 @@ class CoordenadorExames(Agent):
                     f"[PEDIDO] Pedido de diagnóstico MCDT recebido para: {data.get('nome', '?')}",
                     "CYAN")
                 if self.agent.enqueue_exam_request(data):
-                    await self.dispatch_next_exam()
+                    await self.dispatch_exam_batch()
                 else:
                     log(COORD_EXAM,
                         f"[FILA-EXAME] Pedido duplicado ignorado: {data.get('nome', '?')}",
@@ -131,16 +141,26 @@ class CoordenadorExames(Agent):
                 await self.send(cfp)
                 log(COORD_EXAM, f"[CFP] CFP enviado para médico de exame {m_jid}", "CYAN")
 
-            # 2) Aguardar respostas
-            await asyncio.sleep(CONTRACT_NET_RESPONSE_WAIT_SECONDS)
+            # 2) Recolher respostas com early-stopping e deadline de segurança.
 
             equipamento_propostas = []
             medico_propostas = []
 
-            for _ in range(len(equipamentos) + len(medicos_exame)):
-                reply = await self.receive(timeout=COORDINATOR_PROPOSAL_TIMEOUT_SECONDS)
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + CONTRACT_NET_RESPONSE_WAIT_SECONDS
+            expected_replies = len(equipamentos) + len(medicos_exame)
+            received_replies = 0
+
+            while received_replies < expected_replies:
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    break
+
+                reply = await self.receive(timeout=remaining)
                 if reply is None:
-                    continue
+                    break
+
+                received_replies += 1
 
                 if reply.thread != doente_jid:
                     await self.handle_out_of_band_message(reply)
@@ -169,9 +189,17 @@ class CoordenadorExames(Agent):
                         f"[PROPOSTA] Proposta rejeitada: {body.get('motivo', '?')}",
                         "YELLOW")
 
+                if equipamento_propostas and medico_propostas:
+                    log(
+                        COORD_EXAM,
+                        f"[CONTRACT-NET] Early-stop ativado para {nome}: par equipamento+médico encontrado.",
+                        "CYAN",
+                    )
+                    break
+
             # 3) Adjudicar
-            equipamento_proposta = equipamento_propostas[-1] if equipamento_propostas else None
-            medico_proposta = medico_propostas[-1] if medico_propostas else None
+            equipamento_proposta = equipamento_propostas[0] if equipamento_propostas else None
+            medico_proposta = medico_propostas[0] if medico_propostas else None
 
             if equipamento_proposta and medico_proposta:
                 acc_eq = Message(to=equipamento_proposta["sala_jid"])

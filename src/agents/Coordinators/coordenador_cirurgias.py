@@ -44,19 +44,29 @@ class CoordenadorCirurgias(Agent):
 
         async def dispatch_next_surgery(self):
             if not self.agent.pending_surgery_requests:
-                return
+                return False
 
             patient = self.agent.pending_surgery_requests[0]
             allocated = await self.run_surgery_contract_net(patient)
             if allocated:
                 removed = self.agent.pending_surgery_requests.pop(0)
                 self.agent.pending_surgery_patient_ids.discard(removed.get("doente_jid"))
+                return True
+            return False
+
+        async def dispatch_surgery_batch(self, max_dispatches=DISPATCH_BATCH_LIMIT):
+            dispatched = 0
+            while dispatched < max_dispatches and self.agent.pending_surgery_requests:
+                allocated = await self.dispatch_next_surgery()
+                if not allocated:
+                    break
+                dispatched += 1
 
         async def run(self):
             msg = await self.receive(timeout=COORDINATOR_RECEIVE_TIMEOUT_SECONDS)
             if msg is None:
                 if self.agent.pending_surgery_requests:
-                    await self.dispatch_next_surgery()
+                    await self.dispatch_surgery_batch()
                 return
 
             performative = msg.get_metadata("performative")
@@ -69,7 +79,7 @@ class CoordenadorCirurgias(Agent):
                     f"[PEDIDO] Pedido de cirurgia recebido para: {data.get('nome', '?')}",
                     "MAGENTA")
                 if self.agent.enqueue_surgery_request(data):
-                    await self.dispatch_next_surgery()
+                    await self.dispatch_surgery_batch()
                 else:
                     log(COORD_CIR,
                         f"[FILA-CIR] Pedido duplicado ignorado: {data.get('nome', '?')}",
@@ -110,17 +120,26 @@ class CoordenadorCirurgias(Agent):
                 log(COORD_CIR, f"[CFP] Call for Proposal enviado ao médico/cirurgião {m_jid}",
                     "MAGENTA")
 
-            # 3) Aguardar respostas
-            await asyncio.sleep(CONTRACT_NET_RESPONSE_WAIT_SECONDS)
+            # 3) Recolher respostas com early-stopping e deadline de segurança.
 
             bloco_propostas = []
             medico_propostas = []
             expected_replies = len(BLOCOS) + len(medicos_cirurgia)
 
-            for _ in range(expected_replies):
-                reply = await self.receive(timeout=COORDINATOR_PROPOSAL_TIMEOUT_SECONDS)
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + CONTRACT_NET_RESPONSE_WAIT_SECONDS
+            received_replies = 0
+
+            while received_replies < expected_replies:
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    break
+
+                reply = await self.receive(timeout=remaining)
                 if reply is None:
-                    continue
+                    break
+
+                received_replies += 1
 
                 if reply.thread != doente_jid:
                     await self.handle_out_of_band_message(reply)
@@ -145,9 +164,17 @@ class CoordenadorCirurgias(Agent):
                         f"[PROPOSTA] Proposta rejeitada: {body.get('motivo', '?')}",
                         "YELLOW")
 
+                if bloco_propostas and medico_propostas:
+                    log(
+                        COORD_CIR,
+                        f"[CONTRACT-NET] Early-stop ativado para {nome}: par bloco+cirurgião encontrado.",
+                        "MAGENTA",
+                    )
+                    break
+
             # 4) Adjudicar bloco + médico
-            bloco_proposta = bloco_propostas[-1] if bloco_propostas else None
-            medico_proposta = medico_propostas[-1] if medico_propostas else None
+            bloco_proposta = bloco_propostas[0] if bloco_propostas else None
+            medico_proposta = medico_propostas[0] if medico_propostas else None
 
             if bloco_proposta and medico_proposta:
                 acc_b = Message(to=bloco_proposta["sala_jid"])

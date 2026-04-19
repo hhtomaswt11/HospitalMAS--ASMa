@@ -110,7 +110,7 @@ class CoordenadorUrgencias(Agent):
 
         async def dispatch_next_emergency(self):
             if not self.agent.pending_urgencies:
-                return
+                return False
 
             patient = self.agent.pending_urgencies[0]
             allocated = await self.run_emergency_contract_net(patient)
@@ -121,6 +121,7 @@ class CoordenadorUrgencias(Agent):
                 await self.publish_waitlist()
                 if not self.agent.pending_urgencies:
                     await self.send_routine_unblock()
+                return True
             else:
                 doente_jid = patient.get("doente_jid")
                 if doente_jid and doente_jid not in self.agent.preemption_requested_patient_ids:
@@ -141,6 +142,15 @@ class CoordenadorUrgencias(Agent):
                         f"[PREEMPÇÃO] Pedido de preempção enviado ao Supervisor para {patient.get('nome', '?')}.",
                         "RED",
                     )
+                return False
+
+        async def dispatch_emergency_batch(self, max_dispatches=DISPATCH_BATCH_LIMIT):
+            dispatched = 0
+            while dispatched < max_dispatches and self.agent.pending_urgencies:
+                allocated = await self.dispatch_next_emergency()
+                if not allocated:
+                    break
+                dispatched += 1
 
 
         async def run(self):
@@ -152,7 +162,7 @@ class CoordenadorUrgencias(Agent):
                         "[RETRY] Sem eventos novos; a re-tentar despacho da urgência pendente.",
                         "YELLOW",
                     )
-                    await self.dispatch_next_emergency()
+                    await self.dispatch_emergency_batch()
                 return
 
             performative = msg.get_metadata("performative")
@@ -166,7 +176,7 @@ class CoordenadorUrgencias(Agent):
                     f"(prioridade={data['prioridade']})", "RED")
                 if self.agent.enqueue_urgency(data):
                     await self.publish_waitlist()
-                    await self.dispatch_next_emergency()
+                    await self.dispatch_emergency_batch()
                 else:
                     log(COORD_URG,
                         f"[FILA-URG] Pedido duplicado ignorado: {data.get('nome', '?')}",
@@ -181,7 +191,7 @@ class CoordenadorUrgencias(Agent):
                     head_doente_jid = self.agent.pending_urgencies[0].get("doente_jid")
                     if head_doente_jid:
                         self.agent.preemption_requested_patient_ids.discard(head_doente_jid)
-                    await self.dispatch_next_emergency()
+                    await self.dispatch_emergency_batch()
 
         # -----------------------------------------------------------------
         # CONTRACT-NET DE EMERGÊNCIA
@@ -233,17 +243,26 @@ class CoordenadorUrgencias(Agent):
                 log(COORD_URG,
                     f"[CFP] CFP de Emergência enviado para {s_jid}", "RED")
 
-            # 3) Recolher propostas
-            await asyncio.sleep(CONTRACT_NET_RESPONSE_WAIT_SECONDS)
+            # 3) Recolher propostas com early-stopping e deadline de segurança.
 
             medico_propostas = []
             sala_propostas = []
             expected_replies = len(medicos_candidatos) + len(SALAS)
 
-            for _ in range(expected_replies):
-                reply = await self.receive(timeout=COORDINATOR_PROPOSAL_TIMEOUT_SECONDS)
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + CONTRACT_NET_RESPONSE_WAIT_SECONDS
+            received_replies = 0
+
+            while received_replies < expected_replies:
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    break
+
+                reply = await self.receive(timeout=remaining)
                 if reply is None:
-                    continue
+                    break
+
+                received_replies += 1
 
                 if reply.thread != doente_jid:
                     await self.handle_out_of_band_message(reply)
@@ -268,9 +287,17 @@ class CoordenadorUrgencias(Agent):
                         f"[PROPOSTA] Proposta rejeitada: {body.get('motivo', '?')}",
                         "YELLOW")
 
+                if medico_propostas and sala_propostas:
+                    log(
+                        COORD_URG,
+                        f"[CONTRACT-NET] Early-stop ativado para {nome}: par médico+sala encontrado.",
+                        "GREEN",
+                    )
+                    break
+
             # 4) Adjudicar
-            medico_proposta = medico_propostas[-1] if medico_propostas else None
-            sala_proposta = sala_propostas[-1] if sala_propostas else None
+            medico_proposta = medico_propostas[0] if medico_propostas else None
+            sala_proposta = sala_propostas[0] if sala_propostas else None
 
             if medico_proposta and sala_proposta:
                 acc_m = Message(to=medico_proposta["medico_jid"])

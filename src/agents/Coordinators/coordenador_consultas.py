@@ -116,7 +116,7 @@ class CoordenadorConsultas(Agent):
                     f"(especialidade={specialty}, posição={queue_len}).",
                     "YELLOW")
                 if dispatch_after:
-                    await self.dispatch_next_routine()
+                    await self.dispatch_routine_batch()
             else:
                 log(COORD_CONS,
                     f"[FILA] Pedido duplicado ignorado para {data.get('nome', '?')}.",
@@ -127,7 +127,7 @@ class CoordenadorConsultas(Agent):
                 self.agent.routine_hold = True
             await self.handle_preemption(data)
             if dispatch_after:
-                await self.dispatch_next_routine()
+                await self.dispatch_routine_batch()
 
         async def process_routine_gate(self, data, dispatch_after=False):
             blocked = data.get("blocked_specialties")
@@ -140,22 +140,24 @@ class CoordenadorConsultas(Agent):
             estado = "BLOQUEADA" if self.agent.routine_hold else "ATIVA"
             log(COORD_CONS, f"[PRIORIDADE] Via de rotina agora: {estado}", "YELLOW")
             if dispatch_after and not self.agent.routine_hold:
-                await self.dispatch_next_routine()
+                await self.dispatch_routine_batch()
 
-        async def process_routine_finished(self, data):
+        async def process_routine_finished(self, data, dispatch_after=False):
             doente_jid = data.get("doente_jid")
             nome = data.get("nome", "?")
             if self.clear_routine_allocation(doente_jid):
                 log(COORD_CONS,
                     f"[ALOCACAO-LIMPA] Consulta de rotina finalizada/removida para {nome}.",
                     "YELLOW")
+                if dispatch_after and self.agent.has_pending_requests():
+                    await self.dispatch_routine_batch()
 
 
         async def run(self):
             msg = await self.receive(timeout=COORDINATOR_RECEIVE_TIMEOUT_SECONDS)
             if msg is None:
                 if self.agent.has_pending_requests():
-                    await self.dispatch_next_routine()
+                    await self.dispatch_routine_batch()
                 return
 
             performative = msg.get_metadata("performative")
@@ -180,7 +182,7 @@ class CoordenadorConsultas(Agent):
 
             elif performative == "inform" and msg_type == "routine_finished":
                 data = json.loads(msg.body)
-                await self.process_routine_finished(data)
+                await self.process_routine_finished(data, dispatch_after=True)
 
         async def handle_out_of_band_message(self, msg):
             """Processa mensagens que chegam durante a negociação e não pertencem ao thread atual."""
@@ -204,8 +206,16 @@ class CoordenadorConsultas(Agent):
 
             if performative == "inform" and msg_type == "routine_finished":
                 data = json.loads(msg.body)
-                await self.process_routine_finished(data)
+                await self.process_routine_finished(data, dispatch_after=False)
                 return
+
+        async def dispatch_routine_batch(self, max_dispatches=DISPATCH_BATCH_LIMIT):
+            dispatched = 0
+            while dispatched < max_dispatches and self.agent.has_pending_requests():
+                allocated = await self.dispatch_next_routine()
+                if not allocated:
+                    break
+                dispatched += 1
 
         async def dispatch_next_routine(self):
             """Despacha apenas o primeiro doente da fila de rotina (FCFS estrito)."""
@@ -213,10 +223,10 @@ class CoordenadorConsultas(Agent):
                 log(COORD_CONS,
                     "[PRIORIDADE] Rotina temporariamente bloqueada: urgências em espera.",
                     "RED")
-                return
+                return False
 
             if not self.agent.has_pending_requests():
-                return
+                return False
 
             ordered_specialties = list(ROUTINE_SPECIALTIES)
             ordered_specialties.extend(
@@ -246,13 +256,15 @@ class CoordenadorConsultas(Agent):
                 if allocated:
                     self.agent.pop_pending_request(specialty)
                     await self.publish_waitlist()
-                    return
+                    return True
 
                 log(
                     COORD_CONS,
                     f"[FCFS] Doente mantém-se em espera ({specialty}): {patient.get('nome', '?')}",
                     "YELLOW",
                 )
+
+            return False
 
         # -----------------------------------------------------------------
         # CONTRACT-NET: CFP → Recolher propostas → Adjudicar
@@ -314,17 +326,25 @@ class CoordenadorConsultas(Agent):
                 await self.send(cfp)
                 log(COORD_CONS, f"[CFP] Call for Proposal enviado à sala {s_jid}", "GREEN")
 
-            # 3) Aguardar e recolher propostas
-            await asyncio.sleep(CONTRACT_NET_RESPONSE_WAIT_SECONDS)  # tempo para respostas chegarem
-
+            # 3) Recolher propostas com early-stopping: parar assim que existir par médico+sala.
             medico_propostas = []
             sala_propostas = []
             expected_replies = len(medicos_candidatos) + len(SALAS)
 
-            for _ in range(expected_replies):
-                reply = await self.receive(timeout=COORDINATOR_PROPOSAL_TIMEOUT_SECONDS)
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + CONTRACT_NET_RESPONSE_WAIT_SECONDS
+            received_replies = 0
+
+            while received_replies < expected_replies:
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    break
+
+                reply = await self.receive(timeout=remaining)
                 if reply is None:
-                    continue
+                    break
+
+                received_replies += 1
 
                 if reply.thread != doente_jid:
                     await self.handle_out_of_band_message(reply)
@@ -349,6 +369,14 @@ class CoordenadorConsultas(Agent):
                         f"[PROPOSTA] Proposta rejeitada: {body.get('motivo', '?')}",
                         "YELLOW")
 
+                if medico_propostas and sala_propostas:
+                    log(
+                        COORD_CONS,
+                        f"[CONTRACT-NET] Early-stop ativado para {nome}: par médico+sala encontrado.",
+                        "GREEN",
+                    )
+                    break
+
             if requested_specialty in self.agent.blocked_specialties:
                 log(COORD_CONS,
                     f"[PRIORIDADE] Adjudicação de rotina cancelada para {nome} (urgência ativa na especialidade {requested_specialty}).",
@@ -362,8 +390,8 @@ class CoordenadorConsultas(Agent):
                 return False
 
             # 4) Adjudicar ou recusar
-            medico_proposta = medico_propostas[-1] if medico_propostas else None
-            sala_proposta = sala_propostas[-1] if sala_propostas else None
+            medico_proposta = medico_propostas[0] if medico_propostas else None
+            sala_proposta = sala_propostas[0] if sala_propostas else None
 
             if medico_proposta and sala_proposta:
                 # Aceitar médico

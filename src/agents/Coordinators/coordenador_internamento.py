@@ -32,7 +32,7 @@ class CoordenadorInternamento(Agent):
             msg = await self.receive(timeout=COORDINATOR_RECEIVE_TIMEOUT_SECONDS)
             if msg is None:
                 if self.agent.pending_internments:
-                    await self.dispatch_next_internment()
+                    await self.dispatch_internment_batch()
                 return
 
             performative = msg.get_metadata("performative")
@@ -43,14 +43,14 @@ class CoordenadorInternamento(Agent):
                 if self.agent.enqueue_internment(data):
                     await self.publish_waitlist()
                     log(COORD_INT, f"[INTERNAMENTO] Pedido recebido para {data.get('nome', '?')}", "YELLOW")
-                    await self.dispatch_next_internment()
+                    await self.dispatch_internment_batch()
                 else:
                     log(COORD_INT, f"[INTERNAMENTO] Pedido duplicado ignorado para {data.get('nome', '?')}", "YELLOW")
 
             elif performative == "inform" and msg_type == "internment_finished":
                 data = json.loads(msg.body)
                 log(COORD_INT, f"[INTERNAMENTO] Alta concluida para {data.get('nome', '?')}", "GREEN")
-                await self.dispatch_next_internment()
+                await self.dispatch_internment_batch()
 
         async def publish_waitlist(self):
             msg = Message(to=jid(SUPERVISOR))
@@ -71,7 +71,7 @@ class CoordenadorInternamento(Agent):
 
         async def dispatch_next_internment(self):
             if not self.agent.pending_internments:
-                return
+                return False
 
             patient = self.agent.pending_internments[0]
             allocated = await self.run_internment_contract_net(patient)
@@ -79,6 +79,16 @@ class CoordenadorInternamento(Agent):
                 removed = self.agent.pending_internments.pop(0)
                 self.agent.pending_internment_patient_ids.discard(removed.get("doente_jid"))
                 await self.publish_waitlist()
+                return True
+            return False
+
+        async def dispatch_internment_batch(self, max_dispatches=DISPATCH_BATCH_LIMIT):
+            dispatched = 0
+            while dispatched < max_dispatches and self.agent.pending_internments:
+                allocated = await self.dispatch_next_internment()
+                if not allocated:
+                    break
+                dispatched += 1
 
         async def run_internment_contract_net(self, patient_data):
             doente_jid = patient_data.get("doente_jid")
@@ -92,13 +102,23 @@ class CoordenadorInternamento(Agent):
                 cfp.thread = doente_jid
                 await self.send(cfp)
 
-            await asyncio.sleep(INTERNMENT_CONTRACT_NET_RESPONSE_WAIT_SECONDS)
             room_proposal = None
 
-            for _ in range(len(INTERNAMENTO)):
-                reply = await self.receive(timeout=INTERNMENT_CONTRACT_NET_PROPOSAL_TIMEOUT_SECONDS)
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + INTERNMENT_CONTRACT_NET_RESPONSE_WAIT_SECONDS
+            expected_replies = len(INTERNAMENTO)
+            received_replies = 0
+
+            while received_replies < expected_replies:
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    break
+
+                reply = await self.receive(timeout=remaining)
                 if reply is None:
-                    continue
+                    break
+
+                received_replies += 1
                 if reply.thread != doente_jid:
                     if (
                         reply.get_metadata("performative") == "request"
@@ -113,6 +133,11 @@ class CoordenadorInternamento(Agent):
                 body = json.loads(reply.body)
                 if perf == "propose" and "sala_jid" in body:
                     room_proposal = body
+                    log(
+                        COORD_INT,
+                        f"[CONTRACT-NET] Early-stop ativado para {nome}: vaga encontrada.",
+                        "YELLOW",
+                    )
                     break
 
             if room_proposal:
