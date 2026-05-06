@@ -9,11 +9,12 @@ from src.config import *
 class AgenteDoente(Agent):
     
     def __init__(self, agent_jid, password, nome_doente, tipo_entrada="Normal",
-                 especialidade=None, **kwargs):
+                 especialidade=None, hospital_config=None, **kwargs):
         super().__init__(agent_jid, password, **kwargs)
         self.nome_doente = nome_doente
         self.tipo_entrada = tipo_entrada
         self.especialidade = especialidade
+        self.hospital_config = hospital_config  # set for Normal/Urgencia patients
 
     class SendRequestBehaviour(OneShotBehaviour):
         async def run(self):
@@ -25,16 +26,23 @@ class AgenteDoente(Agent):
                 "especialidade": agent.especialidade,
             })
 
-            if agent.tipo_entrada == "Normal":
-                dest = jid(COORD_CONS)
-                log(
-                    agent.nome_doente,
-                    f"[PEDIDO] Consulta de ROTINA para {COORD_CONS} (esp={agent.especialidade})",
-                    "GREEN",
-                )
+            if agent.tipo_entrada == "Central":
+                # Redirected to the central triage agent for hospital selection
+                dest = jid(UNIFIED_TRIAGE)
+                log(agent.nome_doente,
+                    f"[PEDIDO] Encaminhado para TRIAGEM GERAL CENTRAL ({UNIFIED_TRIAGE})",
+                    "MAGENTA")
+            elif agent.tipo_entrada == "Normal":
+                cfg = agent.hospital_config or H1_CONFIG
+                dest = cfg["coord_cons"]
+                log(agent.nome_doente,
+                    f"[PEDIDO] Consulta de ROTINA para {dest} (esp={agent.especialidade})",
+                    "GREEN")
             else:
-                dest = jid(COORD_TRI)
-                log(agent.nome_doente, f"[PEDIDO] EMERGENCIA enviada para {COORD_TRI}", "RED")
+                # Urgencia — goes to hospital-specific triage coordinator
+                cfg = agent.hospital_config or H1_CONFIG
+                dest = cfg["coord_tri"]
+                log(agent.nome_doente, f"[PEDIDO] EMERGENCIA enviada para {dest}", "RED")
 
             msg = Message(to=dest)
             msg.body = body
@@ -59,9 +67,13 @@ class AgenteDoente(Agent):
             resumo = payload.get("estado") or payload.get("status") or payload.get("nome") or str(payload)
             log(self.agent.nome_doente, f"[STATUS] Atualização recebida ({msg_type}): {resumo}", "CYAN")
 
+            if msg_type == "discharge":
+                log(self.agent.nome_doente, "[ALTA] Recebi alta médica! A encerrar agente...", "GREEN")
+                # Em SPADE, chamar stop() liberta os recursos/sockets XMPP associados a este agente.
+                await self.agent.stop()
+                return
+
     async def setup(self):
         log(self.nome_doente, f"AgenteDoente initialized (type={self.tipo_entrada})", "GREEN")
         self.add_behaviour(self.SendRequestBehaviour())
         self.add_behaviour(self.ReceiveStatusBehaviour())
-
-

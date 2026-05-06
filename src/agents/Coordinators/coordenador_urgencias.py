@@ -7,11 +7,19 @@ from spade.message import Message
 
 from src.config import *
 
+
 class CoordenadorUrgencias(Agent):
 
-
-    def __init__(self, agent_jid, password, **kwargs):
+    def __init__(self, agent_jid, password, hospital_config=None, **kwargs):
         super().__init__(agent_jid, password, **kwargs)
+        cfg = hospital_config or H1_CONFIG
+        self.hospital_config = cfg
+        self._supervisor = cfg["supervisor"]
+        self._medicos = cfg["medicos"]
+        self._salas = cfg["salas"]
+        self._coord_cons = cfg["coord_cons"]
+        self._coord_name = str(agent_jid).split("@")[0]
+
         self.pending_urgencies = []
         self.pending_urgency_patient_ids = set()
         self.preemption_requested_patient_ids = set()
@@ -55,35 +63,28 @@ class CoordenadorUrgencias(Agent):
     class EmergencyCoordinatorBehaviour(CyclicBehaviour):
 
         async def send_routine_unblock(self):
-            gate = Message(to=jid(COORD_CONS))
+            gate = Message(to=self.agent._coord_cons)
             gate.set_metadata("performative", "inform")
             gate.set_metadata("type", "routine_gate")
-            gate.body = json.dumps({
-                "blocked_specialties": [],
-                "hold": False,
-            })
+            gate.body = json.dumps({"blocked_specialties": [], "hold": False})
             await self.send(gate)
 
         async def handle_out_of_band_message(self, msg):
             performative = msg.get_metadata("performative")
             msg_type = msg.get_metadata("type")
-
             if performative == "request" and msg_type == "triaged_patient":
                 data = json.loads(msg.body)
                 if self.agent.enqueue_urgency(data):
                     await self.publish_waitlist()
-                    log(COORD_URG,
+                    log(self.agent._coord_name,
                         f"[FILA-URG] Pedido triado enfileirado fora de banda: {data.get('nome', '?')} "
-                        f"(prioridade={data.get('prioridade', '?')})",
-                        "YELLOW")
+                        f"(prioridade={data.get('prioridade', '?')})", "YELLOW")
                 else:
-                    log(COORD_URG,
-                        f"[FILA-URG] Pedido duplicado ignorado: {data.get('nome', '?')}",
-                        "YELLOW")
-                return
+                    log(self.agent._coord_name,
+                        f"[FILA-URG] Pedido duplicado ignorado: {data.get('nome', '?')}", "YELLOW")
 
         async def publish_waitlist(self):
-            msg = Message(to=jid(SUPERVISOR))
+            msg = Message(to=self.agent._supervisor)
             msg.set_metadata("performative", "inform")
             msg.set_metadata("type", "waitlist_update")
             msg.body = json.dumps({
@@ -98,8 +99,7 @@ class CoordenadorUrgencias(Agent):
                 for p in self.agent.pending_urgencies
                 if p.get("especialidade")
             })
-
-            gate = Message(to=jid(COORD_CONS))
+            gate = Message(to=self.agent._coord_cons)
             gate.set_metadata("performative", "inform")
             gate.set_metadata("type", "routine_gate")
             gate.body = json.dumps({
@@ -111,7 +111,6 @@ class CoordenadorUrgencias(Agent):
         async def dispatch_next_emergency(self):
             if not self.agent.pending_urgencies:
                 return False
-
             patient = self.agent.pending_urgencies[0]
             allocated = await self.run_emergency_contract_net(patient)
             if allocated:
@@ -125,7 +124,7 @@ class CoordenadorUrgencias(Agent):
             else:
                 doente_jid = patient.get("doente_jid")
                 if doente_jid and doente_jid not in self.agent.preemption_requested_patient_ids:
-                    preempt = Message(to=jid(SUPERVISOR))
+                    preempt = Message(to=self.agent._supervisor)
                     preempt.set_metadata("performative", "request")
                     preempt.set_metadata("type", "preemption_request")
                     preempt.body = json.dumps({
@@ -137,11 +136,9 @@ class CoordenadorUrgencias(Agent):
                     preempt.thread = doente_jid
                     await self.send(preempt)
                     self.agent.preemption_requested_patient_ids.add(doente_jid)
-                    log(
-                        COORD_URG,
+                    log(self.agent._coord_name,
                         f"[PREEMPÇÃO] Pedido de preempção enviado ao Supervisor para {patient.get('nome', '?')}.",
-                        "RED",
-                    )
+                        "RED")
                 return False
 
         async def dispatch_emergency_batch(self, max_dispatches=DISPATCH_BATCH_LIMIT):
@@ -152,76 +149,61 @@ class CoordenadorUrgencias(Agent):
                     break
                 dispatched += 1
 
-
         async def run(self):
             msg = await self.receive(timeout=COORDINATOR_RECEIVE_TIMEOUT_SECONDS)
             if msg is None:
                 if self.agent.pending_urgencies:
-                    log(
-                        COORD_URG,
-                        "[RETRY] Sem eventos novos; a re-tentar despacho da urgência pendente.",
-                        "YELLOW",
-                    )
+                    log(self.agent._coord_name,
+                        "[RETRY] Sem eventos novos; a re-tentar despacho da urgência pendente.", "YELLOW")
                     await self.dispatch_emergency_batch()
                 return
 
             performative = msg.get_metadata("performative")
             msg_type = msg.get_metadata("type")
 
-            # ---- Pedido triado (da Triagem) ----
             if performative == "request" and msg_type == "triaged_patient":
                 data = json.loads(msg.body)
-                log(COORD_URG,
+                log(self.agent._coord_name,
                     f"[PEDIDO] Pedido triado de emergência recebido: {data['nome']} "
                     f"(prioridade={data['prioridade']})", "RED")
                 if self.agent.enqueue_urgency(data):
                     await self.publish_waitlist()
                     await self.dispatch_emergency_batch()
                 else:
-                    log(COORD_URG,
-                        f"[FILA-URG] Pedido duplicado ignorado: {data.get('nome', '?')}",
-                        "YELLOW")
+                    log(self.agent._coord_name,
+                        f"[FILA-URG] Pedido duplicado ignorado: {data.get('nome', '?')}", "YELLOW")
 
-            # ---- Recursos libertados (do Supervisor) ----
             elif performative == "inform" and msg_type == "resources_freed":
-                log(COORD_URG,
-                    "[NOTIFICAÇÃO] Confirmação de preempção recebida do Supervisor.",
-                    "GREEN")
+                log(self.agent._coord_name,
+                    "[NOTIFICAÇÃO] Confirmação de preempção recebida do Supervisor.", "GREEN")
                 if self.agent.pending_urgencies:
-                    head_doente_jid = self.agent.pending_urgencies[0].get("doente_jid")
-                    if head_doente_jid:
-                        self.agent.preemption_requested_patient_ids.discard(head_doente_jid)
+                    head = self.agent.pending_urgencies[0].get("doente_jid")
+                    if head:
+                        self.agent.preemption_requested_patient_ids.discard(head)
                     await self.dispatch_emergency_batch()
 
-        # -----------------------------------------------------------------
-        # CONTRACT-NET DE EMERGÊNCIA
-        # -----------------------------------------------------------------
         async def run_emergency_contract_net(self, patient_data):
-            """Contract-Net de emergência para alocação imediata."""
+            agent = self.agent
             nome = patient_data["nome"]
             doente_jid = patient_data["doente_jid"]
             requested_specialty = patient_data.get("especialidade")
 
             medicos_candidatos = [
                 m_jid
-                for m_jid in MEDICOS
+                for m_jid in agent._medicos
                 if AGENT_REGISTRY.get(m_jid, {}).get("zone") == "normal"
                 and AGENT_REGISTRY.get(m_jid, {}).get("specialty") == requested_specialty
             ]
 
             if not medicos_candidatos:
-                log(
-                    COORD_URG,
+                log(agent._coord_name,
                     f"[CFP-FILTER] Sem médicos compatíveis (esp={requested_specialty}) para {nome}.",
-                    "YELLOW",
-                )
+                    "YELLOW")
                 return False
 
-            log(COORD_URG,
-                f"[CONTRACT-NET] A iniciar negociação de EMERGÊNCIA para {nome}...",
-                "RED")
+            log(agent._coord_name,
+                f"[CONTRACT-NET] A iniciar negociação de EMERGÊNCIA para {nome}...", "RED")
 
-            # 1) CFP apenas a médicos compatíveis
             for m_jid in medicos_candidatos:
                 cfp = Message(to=m_jid)
                 cfp.body = json.dumps(patient_data)
@@ -229,25 +211,18 @@ class CoordenadorUrgencias(Agent):
                 cfp.set_metadata("type", "emergency_cfp")
                 cfp.thread = doente_jid
                 await self.send(cfp)
-                log(COORD_URG,
-                    f"[CFP] CFP de Emergência enviado para {m_jid}", "RED")
 
-            # 2) CFP a Salas
-            for s_jid in SALAS:
+            for s_jid in agent._salas:
                 cfp = Message(to=s_jid)
                 cfp.body = json.dumps(patient_data)
                 cfp.set_metadata("performative", "cfp")
                 cfp.set_metadata("type", "emergency_cfp")
                 cfp.thread = doente_jid
                 await self.send(cfp)
-                log(COORD_URG,
-                    f"[CFP] CFP de Emergência enviado para {s_jid}", "RED")
-
-            # 3) Recolher propostas com early-stopping e deadline de segurança.
 
             medico_propostas = []
             sala_propostas = []
-            expected_replies = len(medicos_candidatos) + len(SALAS)
+            expected_replies = len(medicos_candidatos) + len(agent._salas)
 
             loop = asyncio.get_running_loop()
             deadline = loop.time() + CONTRACT_NET_RESPONSE_WAIT_SECONDS
@@ -257,45 +232,22 @@ class CoordenadorUrgencias(Agent):
                 remaining = deadline - loop.time()
                 if remaining <= 0:
                     break
-
                 reply = await self.receive(timeout=remaining)
                 if reply is None:
                     break
-
-                received_replies += 1
-
                 if reply.thread != doente_jid:
                     await self.handle_out_of_band_message(reply)
                     continue
-
+                received_replies += 1
                 perf = reply.get_metadata("performative")
                 body = json.loads(reply.body)
-
                 if perf == "propose":
                     if "medico_jid" in body:
                         medico_propostas.append(body)
-                        log(COORD_URG,
-                            f"[PROPOSTA] Proposta recebida de: {body['nome_medico']}",
-                            "GREEN")
                     elif "sala_jid" in body:
                         sala_propostas.append(body)
-                        log(COORD_URG,
-                            f"[PROPOSTA] Proposta recebida de: {body['nome_sala']}",
-                            "GREEN")
-                elif perf == "reject-proposal":
-                    log(COORD_URG,
-                        f"[PROPOSTA] Proposta rejeitada: {body.get('motivo', '?')}",
-                        "YELLOW")
+                # Removido break precoce para processar todas as respostas
 
-                if medico_propostas and sala_propostas:
-                    log(
-                        COORD_URG,
-                        f"[CONTRACT-NET] Early-stop ativado para {nome}: par médico+sala encontrado.",
-                        "GREEN",
-                    )
-                    break
-
-            # 4) Adjudicar
             medico_proposta = medico_propostas[0] if medico_propostas else None
             sala_proposta = sala_propostas[0] if sala_propostas else None
 
@@ -321,45 +273,37 @@ class CoordenadorUrgencias(Agent):
                 acc_s.thread = doente_jid
                 await self.send(acc_s)
 
-                # Rejeitar os proponentes não selecionados.
                 for proposta in medico_propostas:
-                    medico_jid = proposta.get("medico_jid")
-                    if not medico_jid or medico_jid == medico_proposta["medico_jid"]:
+                    m_jid = proposta.get("medico_jid")
+                    if not m_jid or m_jid == medico_proposta["medico_jid"]:
                         continue
-                    rej = Message(to=medico_jid)
+                    rej = Message(to=m_jid)
                     rej.set_metadata("performative", "reject-proposal")
-                    rej.body = json.dumps({
-                        "motivo": "Proposta não selecionada",
-                        "doente_jid": doente_jid,
-                    })
+                    rej.body = json.dumps({"motivo": "Proposta não selecionada", "doente_jid": doente_jid})
                     rej.thread = doente_jid
                     await self.send(rej)
 
                 for proposta in sala_propostas:
-                    sala_jid = proposta.get("sala_jid")
-                    if not sala_jid or sala_jid == sala_proposta["sala_jid"]:
+                    s_jid = proposta.get("sala_jid")
+                    if not s_jid or s_jid == sala_proposta["sala_jid"]:
                         continue
-                    rej = Message(to=sala_jid)
+                    rej = Message(to=s_jid)
                     rej.set_metadata("performative", "reject-proposal")
-                    rej.body = json.dumps({
-                        "motivo": "Proposta não selecionada",
-                        "doente_jid": doente_jid,
-                    })
+                    rej.body = json.dumps({"motivo": "Proposta não selecionada", "doente_jid": doente_jid})
                     rej.thread = doente_jid
                     await self.send(rej)
 
-                log(COORD_URG,
+                log(agent._coord_name,
                     f"[ALOCAÇÃO] EMERGÊNCIA AGENDADA: {nome} → "
                     f"Médico={medico_proposta['nome_medico']}, "
                     f"Sala={sala_proposta['nome_sala']}", "BOLD")
                 return True
             else:
-                log(COORD_URG,
+                log(agent._coord_name,
                     f"[FALHA CRÍTICA] Impossível alocar recursos de emergência para {nome}! "
                     f"Recursos continuam indisponíveis.", "RED")
                 return False
 
     async def setup(self):
-        log(COORD_URG, "Coordenador de Urgências iniciado.", "RED")
-        # SEM TEMPLATE — aceita todas as mensagens, filtragem manual no run()
+        log(self._coord_name, "Coordenador de Urgências iniciado.", "RED")
         self.add_behaviour(self.EmergencyCoordinatorBehaviour())

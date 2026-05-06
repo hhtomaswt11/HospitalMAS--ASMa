@@ -25,6 +25,9 @@
             --warning: #f59e0b;
             --accent-cyan: #06b6d4;
             --accent-pink: #d946ef;
+            --h1-color: #3b82f6;
+            --h2-color: #a855f7;
+            --central-color: #f59e0b;
         }
 
         * {
@@ -51,28 +54,237 @@
             justify-content: space-between;
             align-items: center;
             margin-bottom: 1.5rem;
-            padding: 1rem 2rem;
+            padding: 0.75rem 1.5rem;
             background: var(--bg-surface);
             backdrop-filter: blur(20px);
             border: 1px solid var(--border);
             border-radius: 1rem;
+            gap: 1rem;
+            flex-shrink: 0;
         }
 
         .brand h1 {
-            font-size: 1.5rem;
+            font-size: 1.3rem;
             margin: 0;
             font-weight: 700;
             background: linear-gradient(to right, #60a5fa, #a855f7);
             -webkit-background-clip: text;
             background-clip: text;
             -webkit-text-fill-color: transparent;
+            white-space: nowrap;
         }
 
-        /* Main Layout: 3 Columns */
+        /* ── View Switcher Buttons ── */
+        .view-switcher {
+            display: flex;
+            gap: 0.5rem;
+            background: rgba(2, 6, 23, 0.5);
+            padding: 0.35rem;
+            border-radius: 0.75rem;
+            border: 1px solid var(--border);
+        }
+
+        .view-btn {
+            padding: 0.4rem 1rem;
+            border-radius: 0.5rem;
+            border: 1px solid transparent;
+            background: transparent;
+            color: var(--text-muted);
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+        }
+
+        .view-btn:hover {
+            background: rgba(255, 255, 255, 0.06);
+            color: var(--text);
+        }
+
+        .view-btn.active[data-view="1"] {
+            background: rgba(59, 130, 246, 0.15);
+            border-color: rgba(59, 130, 246, 0.4);
+            color: #60a5fa;
+        }
+
+        .view-btn.active[data-view="2"] {
+            background: rgba(168, 85, 247, 0.15);
+            border-color: rgba(168, 85, 247, 0.4);
+            color: #c084fc;
+        }
+
+        .view-btn.active[data-view="all"] {
+            background: rgba(245, 158, 11, 0.15);
+            border-color: rgba(245, 158, 11, 0.4);
+            color: #fbbf24;
+        }
+
+        .view-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .dot-h1 {
+            background: var(--h1-color);
+        }
+
+        .dot-h2 {
+            background: var(--h2-color);
+        }
+
+        .dot-central {
+            background: var(--central-color);
+        }
+
+        .header-meta {
+            display: flex;
+            gap: 1.5rem;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            white-space: nowrap;
+        }
+
+        /* View label shown in the panels */
+        .view-label-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            font-size: 0.65rem;
+            font-weight: 700;
+            padding: 0.15rem 0.5rem;
+            border-radius: 999px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .badge-h1 {
+            background: rgba(59, 130, 246, 0.2);
+            color: #60a5fa;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+
+        .badge-h2 {
+            background: rgba(168, 85, 247, 0.2);
+            color: #c084fc;
+            border: 1px solid rgba(168, 85, 247, 0.3);
+        }
+
+        .badge-central {
+            background: rgba(245, 158, 11, 0.2);
+            color: #fbbf24;
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+
+        /* ── Central Triage Panel ── */
+        #central-panel {
+            display: none;
+            flex-direction: column;
+            gap: 1.5rem;
+            overflow-y: auto;
+            padding-right: 0.5rem;
+        }
+
+        /* Prevent compression of lounge panels in Central View and unify scroll */
+        #central-panel .lounge-panel {
+            min-height: min-content;
+            flex-shrink: 0;
+            overflow: visible;
+        }
+
+        #central-panel .entity-list {
+            overflow: visible;
+            height: auto;
+            flex: none;
+        }
+
+        .central-hero {
+            background: rgba(245, 158, 11, 0.05);
+            border: 1px solid rgba(245, 158, 11, 0.2);
+            border-radius: 1.5rem;
+            padding: 1.5rem;
+        }
+
+        .central-hero-title {
+            font-size: 1rem;
+            font-weight: 700;
+            color: #fbbf24;
+            margin-bottom: 0.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .central-hero-sub {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-bottom: 1.25rem;
+        }
+
+        .hospital-load-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .load-card {
+            background: rgba(2, 6, 23, 0.4);
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            padding: 1rem;
+        }
+
+        .load-card-title {
+            font-size: 0.75rem;
+            font-weight: 700;
+            margin-bottom: 0.75rem;
+        }
+
+        .load-bar-wrap {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .load-bar-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+        }
+
+        .load-bar-track {
+            height: 6px;
+            background: rgba(255, 255, 255, 0.06);
+            border-radius: 999px;
+            overflow: hidden;
+        }
+
+        .load-bar-fill {
+            height: 100%;
+            border-radius: 999px;
+            transition: width 0.5s ease;
+        }
+
+        .load-bar-fill.h1 {
+            background: linear-gradient(to right, #3b82f6, #06b6d4);
+        }
+
+        .load-bar-fill.h2 {
+            background: linear-gradient(to right, #a855f7, #d946ef);
+        }
+
+        /* ── Main Layout ── */
         .main-layout {
             display: grid;
-            grid-template-columns: 320px 1fr 320px;
-            gap: 2rem;
+            grid-template-columns: 300px 1fr 300px;
+            gap: 1.5rem;
             flex-grow: 1;
             min-height: 0;
             overflow: hidden;
@@ -160,7 +372,7 @@
 
         .rooms-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
             gap: 1.5rem;
         }
 
@@ -270,10 +482,9 @@
             text-transform: uppercase;
         }
 
-        /* Logs & Console at the bottom */
         footer {
-            height: 120px;
-            margin-top: 1.5rem;
+            height: 110px;
+            margin-top: 1rem;
             background: var(--bg-surface);
             border: 1px solid var(--border);
             border-radius: 1rem;
@@ -281,6 +492,7 @@
             font-family: 'JetBrains Mono', monospace;
             font-size: 0.75rem;
             overflow-y: auto;
+            flex-shrink: 0;
         }
 
         .log-entry {
@@ -312,7 +524,6 @@
             }
         }
 
-        /* Interaction Pulse */
         @keyframes pulse-int {
             0% {
                 box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
@@ -369,13 +580,29 @@
         <div class="brand">
             <h1>Hospital Multi-Agent System</h1>
         </div>
-        <div style="display: flex; gap: 1.5rem; font-size: 0.8rem; color: var(--text-muted);">
-            <div>STATUS: <span style="color: var(--success); font-weight: 700;">CONNECTED</span></div>
-            <div>DASHBOARD: <span style="color: var(--primary); font-weight: 700;">REAL-TIME FLOW</span></div>
+
+        <!-- ── View Switcher ── -->
+        <div class="view-switcher" id="view-switcher">
+            <button class="view-btn active" data-view="1" id="btn-h1" onclick="setView('1')">
+                <span class="view-dot dot-h1"></span>Hospital 1
+            </button>
+            <button class="view-btn" data-view="2" id="btn-h2" onclick="setView('2')">
+                <span class="view-dot dot-h2"></span>Hospital 2
+            </button>
+            <button class="view-btn" data-view="all" id="btn-central" onclick="setView('all')">
+                <span class="view-dot dot-central"></span>Triagem Central
+            </button>
+        </div>
+
+        <div class="header-meta">
+            <div id="sim-clock" style="font-family:'JetBrains Mono',monospace; color:var(--accent-cyan); font-weight:700; background:rgba(6,182,212,0.1); padding:0.2rem 0.6rem; border-radius:0.5rem; border:1px solid rgba(6,182,212,0.3);">[Dia 1 - 00:00]</div>
+            <div>STATUS: <span style="color: var(--success); font-weight:700;">CONNECTED</span></div>
+            <div id="header-view-label"></div>
         </div>
     </header>
 
-    <div class="main-layout">
+    <!-- ══ HOSPITAL VIEW (H1 / H2) ══ -->
+    <div class="main-layout" id="hospital-view">
         <!-- Waiting Lounge -->
         <aside class="lounge-panel">
             <div class="panel-title">
@@ -384,47 +611,32 @@
                     <circle cx="12" cy="7" r="4" />
                 </svg>
                 Sala de Espera
+                <span id="lounge-badge" class="view-label-badge badge-h1">H1</span>
             </div>
-            <div class="entity-list" id="lounge-patients">
-                <!-- Waiting Patients -->
-            </div>
+            <div class="entity-list" id="lounge-patients"></div>
         </aside>
 
         <!-- Hospital Map -->
         <main class="hospital-core">
             <section class="wing">
                 <div class="wing-title">Triagem</div>
-                <div class="rooms-grid" id="wing-triage">
-                    <!-- Triage Rooms -->
-                </div>
+                <div class="rooms-grid" id="wing-triage"></div>
             </section>
-
             <section class="wing">
                 <div class="wing-title">Consultórios</div>
-                <div class="rooms-grid" id="wing-primary">
-                    <!-- Standard Consultation Rooms -->
-                </div>
+                <div class="rooms-grid" id="wing-primary"></div>
             </section>
-
             <section class="wing">
                 <div class="wing-title">Salas de Exames</div>
-                <div class="rooms-grid" id="wing-specialized">
-                    <!-- specialized Rooms -->
-                </div>
+                <div class="rooms-grid" id="wing-specialized"></div>
             </section>
-
             <section class="wing">
                 <div class="wing-title">Blocos Operatórios</div>
-                <div class="rooms-grid" id="wing-surgical">
-                    <!-- Surgical Units -->
-                </div>
+                <div class="rooms-grid" id="wing-surgical"></div>
             </section>
-
             <section class="wing">
                 <div class="wing-title">Internamento</div>
-                <div class="rooms-grid" id="wing-inpatient">
-                    <!-- Inpatient Rooms -->
-                </div>
+                <div class="rooms-grid" id="wing-inpatient"></div>
             </section>
         </main>
 
@@ -438,11 +650,110 @@
                     <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
                 </svg>
                 Médicos Disponíveis
+                <span id="staff-badge" class="view-label-badge badge-h1">H1</span>
             </div>
-            <div class="entity-list" id="staff-medics">
-                <!-- Available Medics -->
-            </div>
+            <div class="entity-list" id="staff-medics"></div>
         </aside>
+    </div>
+
+    <!-- ══ CENTRAL TRIAGE VIEW ══ -->
+    <div id="central-panel"
+        style="flex-grow:1; min-height:0; overflow-y:auto; display:none; gap:1.5rem; flex-direction:column;">
+
+        <!-- Load comparison card -->
+        <div class="central-hero">
+            <div class="central-hero-title">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2">
+                    <path d="M12 2L2 7l10 5 10-5-10-5Z" />
+                    <path d="M2 17l10 5 10-5" />
+                    <path d="M2 12l10 5 10-5" />
+                </svg>
+                Triagem Geral Central
+            </div>
+            <div class="central-hero-sub">
+                Agente unificado de triagem — negociação de carga entre hospitais via Contract-Net
+            </div>
+
+            <div class="hospital-load-row">
+                <div class="load-card">
+                    <div class="load-card-title" style="color:#60a5fa;">Hospital 1</div>
+                    <div class="load-bar-wrap">
+                        <div>
+                            <div class="load-bar-label"><span>Rotina</span><span id="h1-routine-count">–</span></div>
+                            <div class="load-bar-track">
+                                <div class="load-bar-fill h1" id="h1-routine-bar" style="width:0%"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="load-bar-label"><span>Urgência</span><span id="h1-urg-count">–</span></div>
+                            <div class="load-bar-track">
+                                <div class="load-bar-fill h1" id="h1-urg-bar" style="width:0%"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="load-bar-label"><span>Internamento</span><span id="h1-int-count">–</span></div>
+                            <div class="load-bar-track">
+                                <div class="load-bar-fill h1" id="h1-int-bar" style="width:0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="load-card">
+                    <div class="load-card-title" style="color:#c084fc;">Hospital 2</div>
+                    <div class="load-bar-wrap">
+                        <div>
+                            <div class="load-bar-label"><span>Rotina</span><span id="h2-routine-count">–</span></div>
+                            <div class="load-bar-track">
+                                <div class="load-bar-fill h2" id="h2-routine-bar" style="width:0%"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="load-bar-label"><span>Urgência</span><span id="h2-urg-count">–</span></div>
+                            <div class="load-bar-track">
+                                <div class="load-bar-fill h2" id="h2-urg-bar" style="width:0%"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="load-bar-label"><span>Internamento</span><span id="h2-int-count">–</span></div>
+                            <div class="load-bar-track">
+                                <div class="load-bar-fill h2" id="h2-int-bar" style="width:0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent routing decisions -->
+        <div class="central-hero" style="background:rgba(139, 92, 246, 0.05); border-color:rgba(139, 92, 246, 0.2);">
+            <div class="central-hero-title" style="color:#c084fc;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="2">
+                    <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+                </svg>
+                Encaminhamentos Recentes
+            </div>
+            <div id="central-routing-list" style="display:flex; flex-direction:column; gap:0.5rem; margin-top:1rem;">
+                <div class="empty-state">Sem encaminhamentos registados</div>
+            </div>
+        </div>
+
+        <!-- Combined patient queue from all hospitals -->
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; flex-shrink:0;">
+            <div class="lounge-panel">
+                <div class="panel-title">
+                    <span class="view-label-badge badge-h1">H1</span>
+                    Sala de Espera
+                </div>
+                <div class="entity-list" id="central-lounge-h1"></div>
+            </div>
+            <div class="lounge-panel">
+                <div class="panel-title">
+                    <span class="view-label-badge badge-h2">H2</span>
+                    Sala de Espera
+                </div>
+                <div class="entity-list" id="central-lounge-h2"></div>
+            </div>
+        </div>
     </div>
 
     <footer>
@@ -450,18 +761,52 @@
     </footer>
 
     <script>
+        // ── View state ──
+        let currentView = '1'; // '1', '2', or 'all'
+
+        function setView(view) {
+            currentView = view;
+            document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(`btn-${view === 'all' ? 'central' : 'h' + view}`).classList.add('active');
+
+            const hospitalView = document.getElementById('hospital-view');
+            const centralPanel = document.getElementById('central-panel');
+
+            if (view === 'all') {
+                hospitalView.style.display = 'none';
+                centralPanel.style.display = 'flex';
+                document.getElementById('header-view-label').innerHTML =
+                    '<span style="color:var(--central-color);font-weight:700;">TRIAGEM CENTRAL</span>';
+            } else {
+                hospitalView.style.display = 'grid';
+                centralPanel.style.display = 'none';
+                const label = view === '1' ? 'HOSPITAL 1' : 'HOSPITAL 2';
+                const color = view === '1' ? 'var(--h1-color)' : 'var(--h2-color)';
+                document.getElementById('header-view-label').innerHTML =
+                    `<span style="color:${color};font-weight:700;">${label}</span>`;
+
+                // Update sidebar badges
+                const badgeClass = view === '1' ? 'badge-h1' : 'badge-h2';
+                const badgeText = view === '1' ? 'H1' : 'H2';
+                ['lounge-badge', 'staff-badge'].forEach(id => {
+                    const el = document.getElementById(id);
+                    el.className = `view-label-badge ${badgeClass}`;
+                    el.textContent = badgeText;
+                });
+            }
+
+            update();
+        }
+
+        // ── Icons ──
         const ICONS = {
             medic: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4.8 2.3A.3.3 0 1 0 5 2.8l2-1.5A.3.3 0 1 0 6.7.8L4.8 2.3Z"/><path d="M16 2a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2h-2Z"/><path d="M11 14a3 3 0 1 0-6 0 3 3 0 0 0 6 0Z"/></svg>',
             patient: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
         };
 
-        // Dynamic Registry of Hospital Entities (Fetched from API)
-        let ENTITIES = {
-            medics: {},
-            rooms: {},
-            patients: {}
-        };
+        let ENTITIES = { medics: {}, rooms: {}, patients: {}, nurses: {} };
 
+        // References — Hospital view
         const loungePatients = document.getElementById('lounge-patients');
         const staffMedics = document.getElementById('staff-medics');
         const wingPrimary = document.getElementById('wing-primary');
@@ -472,296 +817,398 @@
         const logContainer = document.getElementById('log-container');
 
         function normalizeText(value) {
-            return (value || '')
-                .toString()
-                .normalize('NFD')
-                .replace(/[\u0300-\u036f]/g, '')
-                .toLowerCase();
+            return (value || '').toString()
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
         }
 
         function isUrgentInfo(jid, info = {}) {
-            const typeNormalized = normalizeText(info.type);
-            return typeNormalized.includes('urgenc') || jid.toLowerCase().includes('urgente');
+            const typeNorm = normalizeText(info.type);
+            return typeNorm.includes('urgenc') || jid.toLowerCase().includes('urgente');
         }
 
         function formatSpecialty(value) {
-            const normalized = normalizeText(value);
             const mapping = {
-                "raio_x": "Raio-X",
-                "tac": "TAC",
-                "analises": "Analises",
-                "cirurgiao": "Cirurgiao",
-                "pediatra": "Pediatra",
-                "ortopedia": "Ortopedia",
-                "cardiologia": "Cardiologia",
-                "triagem": "Triagem",
+                'raio_x': 'Raio-X', 'tac': 'TAC', 'analises': 'Análises',
+                'cirurgia': 'Cirurgia', 'cirurgiao': 'Cirurgião',
+                'pediatria': 'Pediatria', 'ortopedia': 'Ortopedia',
+                'cardiologia': 'Cardiologia', 'triagem': 'Triagem',
             };
-            return mapping[normalized] || value;
+            return mapping[normalizeText(value)] || value;
         }
 
-        async function update() {
-            try {
-                const res = await fetch('/api/state');
-                const data = await res.json();
-
-                // Update registry from API if available
-                if (data.registry) {
-                    ENTITIES = { medics: {}, rooms: {}, patients: {} };
-                    Object.keys(data.registry).forEach(jid => {
-                        const info = data.registry[jid];
-                        if (info.role === 'medic' || info.role === 'triage_medic') ENTITIES.medics[jid] = info;
-                        else if (info.role === 'room') ENTITIES.rooms[jid] = info;
-                        else if (info.role === 'patient') ENTITIES.patients[jid] = info;
-                    });
-                }
-
-                renderFlow(data);
-            } catch (e) { console.error(e); }
-        }
-
-        function createEntityEntry(jid, info, type, isInteracting = false, showQueueSpecialty = false) {
+        function createEntityEntry(jid, info, type, isInteracting = false, showQueueSpecialty = false, resourceState = null) {
             const isEmergency = isUrgentInfo(jid, info);
             let subtitle = info.type || (type === 'medic' ? 'Profissional' : 'S/ Ref');
-
-            if (type === 'medic') {
-                subtitle = formatSpecialty(info.specialty) || info.type || 'Profissional';
-            }
-
+            if (type === 'medic') subtitle = formatSpecialty(info.specialty) || info.type || 'Profissional';
+            if (type === 'nurse') subtitle = 'Enfermagem';
             if (type === 'patient' && showQueueSpecialty && info.specialty) {
                 const urgencyPrefix = isEmergency ? 'Urgencia' : 'Rotina';
                 subtitle = `${urgencyPrefix} • ${formatSpecialty(info.specialty)}`;
             }
 
+            // ── Scheduling: avatar border color + compact hours row ──
+            let avatarBorder = '';
+            let scheduleBadge = '';
+            if (resourceState && (type === 'medic' || type === 'nurse')) {
+                const hours   = resourceState.weekly_hours_used;
+                const maxH    = resourceState.max_weekly_hours || 40;
+                const onShift = resourceState.on_shift;
+                if (hours !== undefined) {
+                    const pct      = Math.min(100, Math.round((hours / maxH) * 100));
+                    const barColor = pct >= 100 ? 'var(--error)' : pct >= 75 ? '#f59e0b' : 'var(--success)';
+                    const ringColor = onShift ? '#22c55e' : '#f59e0b';
+                    avatarBorder = `box-shadow:0 0 0 2.5px ${ringColor};`;
+                    scheduleBadge = `
+                        <div style="margin-top:3px;display:flex;align-items:center;gap:5px;white-space:nowrap;">
+                            <span style="font-size:0.6rem;color:var(--text-muted);">${Math.round(hours)}/${maxH}h</span>
+                            <div style="width:36px;height:3px;background:var(--border);border-radius:2px;flex-shrink:0;">
+                                <div style="width:${pct}%;height:100%;background:${barColor};border-radius:2px;transition:width 0.4s;"></div>
+                            </div>
+                        </div>`;
+                }
+            }
+
+            const avatarClass = type === 'medic' ? 'avatar-medic'
+                              : type === 'nurse' ? 'avatar-medic'
+                              : isEmergency ? 'avatar-emergency' : 'avatar-patient';
+
             return `
                 <div class="entity-card ${isInteracting ? 'interacting' : ''}" id="card-${jid.split('@')[0]}">
-                    <div class="avatar ${type === 'medic' ? 'avatar-medic' : (isEmergency ? 'avatar-emergency' : 'avatar-patient')} ${isInteracting ? 'avatar-interacting' : ''}">
-                        ${type === 'medic' ? ICONS.medic : ICONS.patient}
+                    <div class="avatar ${avatarClass} ${isInteracting ? 'avatar-interacting' : ''}" style="${avatarBorder}">
+                        ${(type === 'medic' || type === 'nurse') ? ICONS.medic : ICONS.patient}
                     </div>
                     <div class="entity-info">
                         <div class="entity-name">${info.name || jid.split('@')[0]}</div>
                         <div class="entity-type">${subtitle}</div>
+                        ${scheduleBadge}
                     </div>
-                </div>
-            `;
+                </div>`;
         }
 
-        function renderFlow(data) {
+        // ─────────────────────────────────────────────────────────────
+        //  Hospital view renderer (H1 or H2)
+        // ─────────────────────────────────────────────────────────────
+        function renderHospitalView(data, hospitalId) {
+            if (!data) return;
             const resources = data.resources || {};
-            const waitlist = data.waitlist || { routine: [], emergency: [], triage: [] };
             const logs = data.logs || [];
+            const wl = data.waitlist || {};
 
-            // Tracking who is currently in a room
+            // Read from hospital-namespaced waitlist keys (h1_routine, h2_emergency, …)
+            // with fallback to flat keys if namespacing isn't active yet.
+            const prefix = `h${hospitalId}_`;
+            const waitlist = {
+                triage: wl[`${prefix}triage`] || wl.triage || [],
+                routine: wl[`${prefix}routine`] || wl.routine || [],
+                emergency: wl[`${prefix}emergency`] || wl.emergency || [],
+                internment: wl[`${prefix}internment`] || wl.internment || [],
+            };
+
+            // Filter entities by hospital (H1=1, H2=2)
+            const filteredRooms = {};
+            const filteredMedics = {};
+            const filteredNurses = {};
+            const filteredPatients = { ...ENTITIES.patients };
+
+            Object.keys(ENTITIES.rooms).forEach(jid => {
+                const info = ENTITIES.rooms[jid];
+                if (info && info.hospital == hospitalId) filteredRooms[jid] = info;
+            });
+
+            Object.keys(ENTITIES.medics).forEach(jid => {
+                const info = ENTITIES.medics[jid];
+                if (info && info.hospital == hospitalId) filteredMedics[jid] = info;
+            });
+
+            Object.keys(ENTITIES.nurses || {}).forEach(jid => {
+                const info = ENTITIES.nurses[jid];
+                if (info && info.hospital == hospitalId) filteredNurses[jid] = info;
+            });
+
             const inRoomPatients = new Set();
             const inRoomMedics = new Set();
 
-            // 1. Render Rooms and identify active agents
-            const roomsHtml = {
-                primary: '',
-                specialized: '',
-                surgical: '',
-                triage: '',
-                inpatient: '',
-            };
+            const roomsHtml = { primary: '', specialized: '', surgical: '', triage: '', inpatient: '' };
 
-            Object.keys(ENTITIES.rooms).forEach(roomJid => {
-                const roomInfo = ENTITIES.rooms[roomJid];
+            Object.keys(filteredRooms).forEach(roomJid => {
+                const roomInfo = filteredRooms[roomJid];
+                if (!roomInfo) return; // Safety check
+
                 const roomState = resources[roomJid] || { disponivel: true };
-
                 const isOccupied = !roomState.disponivel;
                 const patientJid = roomState.paciente_atual;
 
-                let patientHtml = '';
-                let medicHtml = '';
+                let patientHtml = '', medicHtml = '';
 
                 if (isOccupied && patientJid) {
                     inRoomPatients.add(patientJid);
-                    const pInfo = ENTITIES.patients[patientJid] || { name: patientJid.split('@')[0], type: "Externo" };
+                    const pInfo = filteredPatients[patientJid] || { name: patientJid.split('@')[0], type: 'Externo' };
                     patientHtml = createEntityEntry(patientJid, pInfo, 'patient');
 
+                    // Find medic or nurse assigned to this patient
                     Object.keys(resources).forEach(mJid => {
                         const mState = resources[mJid];
-                        if (mState.paciente_atual === patientJid && ENTITIES.medics[mJid]) {
-                            inRoomMedics.add(mJid);
-                            const mInfo = ENTITIES.medics[mJid];
-                            const isInteracting = (Date.now() / 1000 - mState.last_activity) < 5;
-                            medicHtml = createEntityEntry(mJid, mInfo, 'medic', isInteracting);
+                        if (mState && mState.paciente_atual === patientJid) {
+                            if (filteredMedics[mJid]) {
+                                inRoomMedics.add(mJid);
+                                const mInfo = filteredMedics[mJid];
+                                const isInteracting = (Date.now() / 1000 - (mState.last_activity || 0)) < 5;
+                                medicHtml = createEntityEntry(mJid, mInfo, 'medic', isInteracting, false, mState);
+                            } else if (filteredNurses[mJid]) {
+                                inRoomMedics.add(mJid); // We use inRoomMedics set for nurses too to hide them from staff section
+                                const nInfo = filteredNurses[mJid];
+                                const isInteracting = (Date.now() / 1000 - (mState.last_activity || 0)) < 5;
+                                medicHtml = createEntityEntry(mJid, nInfo, 'nurse', isInteracting, false, mState);
+                            }
                         }
                     });
                 }
 
                 const html = `
-                    <div class="room ${patientJid && patientJid.includes('urgente') ? 'emergency-high' : ''}">
+                    <div class="room">
                         <div class="room-header">
                             <span>${roomInfo.name}</span>
                             <span style="color:${isOccupied ? 'var(--error)' : 'var(--success)'}">${isOccupied ? 'OCUPADA' : 'LIVRE'}</span>
                         </div>
                         <div class="room-slots">
                             <div class="slot" data-label="Paciente">${patientHtml}</div>
-                            <div style="font-size: 0.7rem; color: var(--text-muted); opacity: 0.5;">●</div>
-                            <div class="slot" data-label="Médico">${medicHtml}</div>
+                            <div style="font-size:0.7rem;color:var(--text-muted);opacity:0.5;">●</div>
+                            <div class="slot" data-label="Profissional">${medicHtml}</div>
                         </div>
-                    </div>
-                `;
-                if (roomsHtml[roomInfo.wing] !== undefined) {
-                    roomsHtml[roomInfo.wing] += html;
-                }
+                    </div>`;
+                if (roomsHtml[roomInfo.wing] !== undefined) roomsHtml[roomInfo.wing] += html;
             });
 
-            wingPrimary.innerHTML = roomsHtml.primary;
-            wingSpecialized.innerHTML = roomsHtml.specialized;
-            wingSurgical.innerHTML = roomsHtml.surgical;
-            wingTriage.innerHTML = roomsHtml.triage;
-            wingInpatient.innerHTML = roomsHtml.inpatient;
+            wingPrimary.innerHTML = roomsHtml.primary || '<div class="empty-state">Sem quartos</div>';
+            wingSpecialized.innerHTML = roomsHtml.specialized || '<div class="empty-state">Sem quartos</div>';
+            wingSurgical.innerHTML = roomsHtml.surgical || '<div class="empty-state">Sem quartos</div>';
+            wingTriage.innerHTML = roomsHtml.triage || '<div class="empty-state">Sem quartos</div>';
+            wingInpatient.innerHTML = roomsHtml.inpatient || '<div class="empty-state">Sem quartos</div>';
 
-            // 2. Render Lounge (Patients NOT in rooms)
+            // ── Lounge ──
             const triageQueue = Array.isArray(waitlist.triage) ? waitlist.triage : [];
             const routineQueue = Array.isArray(waitlist.routine) ? waitlist.routine : [];
             const emergencyQueue = Array.isArray(waitlist.emergency) ? waitlist.emergency : [];
             const queueMap = new Map();
 
-            triageQueue.forEach((p) => {
-                const pJid = p?.doente_jid;
-                if (pJid && !queueMap.has(pJid)) {
-                    queueMap.set(pJid, { ...p, queueType: 'triage' });
-                }
-            });
-
-            emergencyQueue.forEach((p) => {
-                const pJid = p?.doente_jid;
-                if (pJid && !queueMap.has(pJid)) {
-                    queueMap.set(pJid, { ...p, queueType: 'emergency' });
-                }
-            });
-
-            routineQueue.forEach((p) => {
-                const pJid = p?.doente_jid;
-                if (pJid && !queueMap.has(pJid)) {
-                    queueMap.set(pJid, { ...p, queueType: 'routine' });
-                }
-            });
-
-            let loungeHtml = '';
-
-            function renderQueueGroup(title, queueItems) {
-                if (!Array.isArray(queueItems) || queueItems.length === 0) {
-                    return '';
-                }
-                let groupHtml = `<div class="queue-group"><div class="queue-group-title">${title}</div>`;
-                queueItems.forEach((queuedPatient) => {
-                    const pJid = queuedPatient?.doente_jid;
-                    if (!pJid || inRoomPatients.has(pJid)) {
-                        return;
-                    }
-                    const registryInfo = ENTITIES.patients[pJid] || {};
-                    const isEmergency = queuedPatient.queueType === 'emergency' || queuedPatient.queueType === 'triage';
-                    groupHtml += createEntityEntry(
-                        pJid,
-                        {
-                            name: queuedPatient.nome || registryInfo.name || pJid.split('@')[0],
-                            type: isEmergency ? 'Urgencia' : (registryInfo.type || 'Em Espera'),
-                            specialty: queuedPatient.especialidade,
-                        },
-                        'patient',
-                        false,
-                        true
-                    );
-                });
-                groupHtml += '</div>';
-                return groupHtml;
-            }
+            triageQueue.forEach(p => { const pj = p?.doente_jid; if (pj && !queueMap.has(pj)) queueMap.set(pj, { ...p, queueType: 'triage' }); });
+            emergencyQueue.forEach(p => { const pj = p?.doente_jid; if (pj && !queueMap.has(pj)) queueMap.set(pj, { ...p, queueType: 'emergency' }); });
+            routineQueue.forEach(p => { const pj = p?.doente_jid; if (pj && !queueMap.has(pj)) queueMap.set(pj, { ...p, queueType: 'routine' }); });
 
             const triageQueueItems = [];
             const mergedBySpecialty = {};
-            queueMap.forEach((queuedPatient) => {
-                if (queuedPatient.queueType === 'triage') {
-                    triageQueueItems.push(queuedPatient);
-                    return;
-                }
-                const specialty = queuedPatient.especialidade || 'sem_especialidade';
-                if (!mergedBySpecialty[specialty]) {
-                    mergedBySpecialty[specialty] = [];
-                }
-                mergedBySpecialty[specialty].push(queuedPatient);
+            queueMap.forEach(qp => {
+                if (qp.queueType === 'triage') { triageQueueItems.push(qp); return; }
+                const sp = qp.especialidade || 'sem_especialidade';
+                if (!mergedBySpecialty[sp]) mergedBySpecialty[sp] = [];
+                mergedBySpecialty[sp].push(qp);
             });
 
-            const specialties = Object.keys(mergedBySpecialty);
-
-            if (triageQueueItems.length) {
-                loungeHtml += renderQueueGroup('Triagem', triageQueueItems);
-            }
-
-            if (specialties.length) {
-                specialties.forEach((specialty) => {
-                    loungeHtml += renderQueueGroup(formatSpecialty(specialty), mergedBySpecialty[specialty]);
+            function renderQueueGroup(title, items) {
+                if (!items || !items.length) return '';
+                let html = `<div class="queue-group"><div class="queue-group-title">${title}</div>`;
+                items.forEach(qp => {
+                    const pj = qp?.doente_jid;
+                    if (!pj || inRoomPatients.has(pj)) return;
+                    const reg = filteredPatients[pj] || {};
+                    const isEmergency = qp.queueType === 'emergency' || qp.queueType === 'triage';
+                    html += createEntityEntry(pj, {
+                        name: qp.nome || reg.name || pj.split('@')[0],
+                        type: isEmergency ? 'Urgencia' : (reg.type || 'Em Espera'),
+                        specialty: qp.especialidade,
+                    }, 'patient', false, true);
                 });
+                return html + '</div>';
             }
 
-            if (!loungeHtml) {
-            queueMap.forEach((queuedPatient, pJid) => {
-                if (!inRoomPatients.has(pJid)) {
-                    const registryInfo = ENTITIES.patients[pJid] || {};
-                    const isEmergency =
-                        queuedPatient.queueType === 'emergency' ||
-                        normalizeText(queuedPatient.tipo).includes('urgenc') ||
-                        (queuedPatient.prioridade !== null && queuedPatient.prioridade !== undefined);
-                    loungeHtml += createEntityEntry(
-                        pJid,
-                        {
-                            name: queuedPatient.nome || registryInfo.name || pJid.split('@')[0],
-                            type: isEmergency ? 'Urgencia' : (registryInfo.type || 'Em Espera'),
-                            specialty: queuedPatient.especialidade,
-                        },
-                        'patient',
-                        false,
-                        true
-                    );
-                }
+            let loungeHtml = '';
+            if (triageQueueItems.length) loungeHtml += renderQueueGroup('Triagem', triageQueueItems);
+            Object.keys(mergedBySpecialty).forEach(sp => {
+                loungeHtml += renderQueueGroup(formatSpecialty(sp), mergedBySpecialty[sp]);
             });
-            }
-            if (!loungeHtml) {
-                loungeHtml = '<div class="empty-state">Sem doentes em espera</div>';
-            }
+            if (!loungeHtml) loungeHtml = '<div class="empty-state">Sem doentes em espera</div>';
             loungePatients.innerHTML = loungeHtml;
 
-            // 3. Render Staff On-Call (Medics NOT in rooms)
+            // ── Staff ──
             const medicsBySpecialty = {};
-            Object.keys(ENTITIES.medics).forEach(mJid => {
-                if (inRoomMedics.has(mJid)) {
-                    return;
-                }
-
-                const mInfo = ENTITIES.medics[mJid] || {};
-                const specialtyKey = mInfo.specialty || 'sem_especialidade';
-                if (!medicsBySpecialty[specialtyKey]) {
-                    medicsBySpecialty[specialtyKey] = [];
-                }
-                medicsBySpecialty[specialtyKey].push({ jid: mJid, info: mInfo });
+            Object.keys(filteredMedics).forEach(mJid => {
+                if (inRoomMedics.has(mJid)) return;
+                const mInfo = filteredMedics[mJid] || {};
+                const sp = mInfo.specialty || 'sem_especialidade';
+                if (!medicsBySpecialty[sp]) medicsBySpecialty[sp] = [];
+                medicsBySpecialty[sp].push({ jid: mJid, info: mInfo });
             });
 
             let staffHtml = '';
-            const medicSpecialties = Object.keys(medicsBySpecialty);
-            medicSpecialties.forEach((specialty) => {
-                staffHtml += `<div class="queue-group"><div class="queue-group-title">${formatSpecialty(specialty)}</div>`;
-                medicsBySpecialty[specialty].forEach((medic) => {
-                    staffHtml += createEntityEntry(medic.jid, medic.info, 'medic');
+            Object.keys(medicsBySpecialty).forEach(sp => {
+                staffHtml += `<div class="queue-group"><div class="queue-group-title">${formatSpecialty(sp)}</div>`;
+                medicsBySpecialty[sp].forEach(m => {
+                    const mState = resources[m.jid] || null;
+                    staffHtml += createEntityEntry(m.jid, m.info, 'medic', false, false, mState);
                 });
                 staffHtml += '</div>';
             });
+
+            // ── Nurses section ──
+            if (Object.keys(filteredNurses).length > 0) {
+                staffHtml += `<div class="queue-group"><div class="queue-group-title">Enfermagem</div>`;
+                Object.keys(filteredNurses).forEach(nJid => {
+                    const nInfo = filteredNurses[nJid];
+                    const nState = resources[nJid] || null;
+                    staffHtml += createEntityEntry(nJid, nInfo, 'nurse', false, false, nState);
+                });
+                staffHtml += '</div>';
+            }
+
+            if (!staffHtml) staffHtml = '<div class="empty-state">Sem médicos registados</div>';
             staffMedics.innerHTML = staffHtml;
 
-            // 4. Render Logs
+            renderLogs(logs);
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        //  Central Triage view renderer
+        // ─────────────────────────────────────────────────────────────
+        const MAX_BAR_PATIENTS = 10;
+
+        function setBar(id, count) {
+            const el = document.getElementById(id + '-bar');
+            const cnt = document.getElementById(id + '-count');
+            if (el) el.style.width = Math.min(100, (count / MAX_BAR_PATIENTS) * 100) + '%';
+            if (cnt) cnt.textContent = count;
+        }
+
+        function renderCentralView(data) {
+            if (!data) return;
+            const wl = data.waitlist || {};
+            const routing = data.routing || [];
+
+            // Read keys (with namespacing support)
+            const routineH1 = wl['h1_routine'] || [];
+            const routineH2 = wl['h2_routine'] || [];
+            const urgH1 = wl['h1_emergency'] || [];
+            const urgH2 = wl['h2_emergency'] || [];
+            const triH1 = wl['h1_triage'] || [];
+            const triH2 = wl['h2_triage'] || [];
+            const intH1 = wl['h1_internment'] || [];
+            const intH2 = wl['h2_internment'] || [];
+
+            setBar('h1-routine', routineH1.length);
+            setBar('h1-urg', urgH1.length + triH1.length);
+            setBar('h1-int', intH1.length);
+            setBar('h2-routine', routineH2.length);
+            setBar('h2-urg', urgH2.length + triH2.length);
+            setBar('h2-int', intH2.length);
+
+            // Routing list rendering
+            const routingList = document.getElementById('central-routing-list');
+            if (routingList) {
+                if (!routing.length) {
+                    routingList.innerHTML = '<div class="empty-state">Sem encaminhamentos registados</div>';
+                } else {
+                    routingList.innerHTML = routing.slice(-5).reverse().map(r => {
+                        const isH1 = r.dest.includes('h1') || r.dest.includes('coord_') && !r.dest.includes('h2_');
+                        const hLabel = isH1 ? 'H1' : 'H2';
+                        const hClass = isH1 ? 'badge-h1' : 'badge-h2';
+                        const typeClass = r.tipo === 'Urgencia' ? 'color:var(--error)' : 'color:var(--success)';
+                        const hospitalName = isH1 ? 'Hospital 1' : 'Hospital 2';
+                        const hospitalColor = isH1 ? '#60a5fa' : '#c084fc';
+
+                        return `
+                            <div class="entity-card" style="padding: 0.5rem 1rem; border-left: 3px solid ${isH1 ? 'var(--h1-color)' : 'var(--h2-color)'}; display: flex; align-items: center; justify-content: center; position: relative; min-height: 55px;">
+                                <div style="position: absolute; left: 1rem; display: flex; align-items: center; gap: 0.75rem;">
+                                    <span style="font-size: 0.75rem; color: var(--text-muted); width: 55px;">${r.time}</span>
+                                    <span style="font-weight:600; font-size:0.9rem; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${r.nome}</span>
+                                </div>
+                                <div style="font-size: 1rem; width: 280px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                    <span style="color: ${hospitalColor}; font-weight: 700;">${hospitalName}</span> ${formatSpecialty(r.especialidade)}
+                                </div>
+                                <div class="view-label-badge ${hClass}" style="position: absolute; right: 1rem; width: 165px; text-align: center; margin: 0;">${hLabel} (Fila: ${r.load})</div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+            }
+
+            function buildGroup(title, list, queueType) {
+                if (!list || !list.length) return '';
+                let html = `<div class="queue-group"><div class="queue-group-title">${title}</div>`;
+                list.forEach(p => {
+                    const pj = p?.doente_jid || '';
+                    const reg = ENTITIES.patients[pj] || {};
+                    const isEmg = queueType === 'emergency' || queueType === 'triage';
+                    html += createEntityEntry(pj, {
+                        name: p.nome || reg.name || (pj ? pj.split('@')[0] : 'Desconhecido'),
+                        type: isEmg ? 'Urgencia' : 'Em Espera',
+                        specialty: p.especialidade,
+                    }, 'patient', false, true);
+                });
+                return html + '</div>';
+            }
+
+            function renderLoungeFor(containerId, tri, urg, routine) {
+                const container = document.getElementById(containerId);
+                if (!container) return;
+                let html = buildGroup('Triagem', tri, 'triage')
+                    + buildGroup('Urgência', urg, 'emergency')
+                    + buildGroup('Rotina', routine, 'routine');
+                if (!html) html = '<div class="empty-state">Sem doentes em espera</div>';
+                container.innerHTML = html;
+            }
+
+            renderLoungeFor('central-lounge-h1', triH1, urgH1, routineH1);
+            renderLoungeFor('central-lounge-h2', triH2, urgH2, routineH2);
+
+            renderLogs(data.logs || []);
+        }
+
+        function renderLogs(logs) {
             if (logs.length > 0) {
                 logContainer.innerHTML = logs.slice(-5).map(l => `
                     <div class="log-entry">
-                        <span style="color:var(--text-muted)">[${l.time}]</span> 
+                        <span style="color:var(--text-muted)">[${l.time}]</span>
                         <span style="color:var(--primary)">[${l.agent}]</span> ${l.message}
-                    </div>
-                `).join('');
+                    </div>`).join('');
             }
         }
 
+        // ─────────────────────────────────────────────────────────────
+        //  Fetch + dispatch
+        // ─────────────────────────────────────────────────────────────
+        async function update() {
+            try {
+                const res = await fetch('/api/state');
+                const data = await res.json();
+                
+                if (data.sim_time) {
+                    const d = data.sim_time.day;
+                    const h = data.sim_time.hour.toString().padStart(2, '0');
+                    const m = data.sim_time.minute.toString().padStart(2, '0');
+                    document.getElementById('sim-clock').textContent = `[Dia ${d} - ${h}:${m}]`;
+                }
+
+                if (data.registry) {
+                    ENTITIES = { medics: {}, rooms: {}, patients: {}, nurses: {} };
+                    Object.keys(data.registry).forEach(jid => {
+                        const info = data.registry[jid];
+                        if (info.role === 'medic' || info.role === 'triage_medic') ENTITIES.medics[jid] = info;
+                        else if (info.role === 'nurse') ENTITIES.nurses[jid] = info;
+                        else if (info.role === 'room') ENTITIES.rooms[jid] = info;
+                        else if (info.role === 'patient') ENTITIES.patients[jid] = info;
+                    });
+                }
+
+                if (currentView === 'all') {
+                    renderCentralView(data);
+                } else {
+                    renderHospitalView(data, parseInt(currentView));
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        // ── Boot ──
+        setView('1');
         setInterval(update, 500);
-        update();
     </script>
 </body>
 

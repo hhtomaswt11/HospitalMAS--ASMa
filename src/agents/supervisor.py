@@ -17,16 +17,19 @@ GLOBAL_WAITLIST = {
     "triage": [],
     "internment": [],
 }
+GLOBAL_ROUTING_HISTORY = []
 RECENT_LOGS = []
 
-def dump_state():
+def dump_state(sim_time=None):
     try:
         with open("data/dashboard.json", "w", encoding="utf-8") as f:
             json.dump({
                 "resources": GLOBAL_DASHBOARD,
                 "waitlist": GLOBAL_WAITLIST,
+                "routing": GLOBAL_ROUTING_HISTORY,
                 "logs": RECENT_LOGS,
-                "registry": AGENT_REGISTRY
+                "registry": AGENT_REGISTRY,
+                "sim_time": sim_time or {"day": 1, "hour": 0, "minute": 0}
             }, f, ensure_ascii=False)
     except Exception as exc:
         print(f"[SUPERVISOR] dump_state failed: {exc}")
@@ -34,165 +37,235 @@ def dump_state():
 _original_log = log
 def log(agent_name, message, color="WHITE"):
     _original_log(agent_name, message, color)
-    
+
     timestamp = datetime.now().strftime("%H:%M:%S")
     RECENT_LOGS.append({"time": timestamp, "agent": agent_name, "message": message, "color": color})
     if len(RECENT_LOGS) > 40:
         RECENT_LOGS.pop(0)
 
-    if agent_name == SUPERVISOR:
+    if "supervisor" in str(agent_name).lower():
         full_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         try:
             with open("data/log_supervisor.txt", "a", encoding="utf-8") as f:
-                f.write(f"[{full_timestamp}] {message}\n")
+                f.write(f"[{full_timestamp}] [{agent_name}] {message}\n")
         except Exception:
             pass
 
 
 class Supervisor(Agent):
 
-    def __init__(self, agent_jid, password, **kwargs):
+    def __init__(self, agent_jid, password, hospital_config=None, hospital_id=1, **kwargs):
         super().__init__(agent_jid, password, **kwargs)
+        cfg = hospital_config or H1_CONFIG
+        self._hospital_id = hospital_id
+        self._coord_cons = cfg["coord_cons"]
+        self._coord_urg = cfg["coord_urg"]
+        self._supervisor_name = str(agent_jid).split("@")[0]
+        import time
+        self._sim_start_time = time.time()
 
     class PeriodicDumperBehaviour(CyclicBehaviour):
         async def run(self):
-            dump_state()
+            if self.agent._hospital_id == 1:
+                import time
+                elapsed = time.time() - self.agent._sim_start_time
+                total_hours = elapsed / SIM_HOUR_SECONDS
+                absolute_hours = total_hours + 8 # A simulação começa às 08:00 da manhã
+                
+                day = int(absolute_hours // 24) + 1
+                hour = int(absolute_hours % 24)
+                minute = int((absolute_hours - int(absolute_hours)) * 60)
+                sim_time = {"day": day, "hour": hour, "minute": minute}
+                
+                dump_state(sim_time)
             await asyncio.sleep(SUPERVISOR_DUMP_INTERVAL_SECONDS)
 
     class MonitorBehaviour(CyclicBehaviour):
         async def run(self):
-            msg = await self.receive(timeout=SUPERVISOR_RECEIVE_TIMEOUT_SECONDS)
-            if msg is None:
-                return
-
-            performative = msg.get_metadata("performative")
-            msg_type = msg.get_metadata("type")
-
-            if performative == "inform" and msg_type == "resource_status":
-                data = json.loads(msg.body)
-                r_jid = data.get("recurso_jid")
-                GLOBAL_DASHBOARD[r_jid] = data
-                
-                # Dynamic registry update (for newly spawned agents)
-                if r_jid not in AGENT_REGISTRY:
-                    AGENT_REGISTRY[r_jid] = {
-                        "name": data.get("nome", r_jid.split("@")[0]),
-                        "role": "patient" if "doente" in r_jid.lower() else "infra",
-                        "type": "Dinâmico"
-                    }
-                
-                # Also register the patient being treated
-                p_jid = data.get("paciente_atual")
-                if p_jid:
-                    room_info = AGENT_REGISTRY.get(r_jid, {})
-                    room_wing = room_info.get("wing")
-                    current_patient = AGENT_REGISTRY.get(p_jid, {})
-                    current_type = str(current_patient.get("type", ""))
-
-                    if room_wing == "triage" or "urg" in current_type.lower():
-                        patient_type = "Urgência"
-                    else:
-                        patient_type = current_type or "Em Atendimento"
-
-                    AGENT_REGISTRY[p_jid] = {
-                        "name": current_patient.get("name", p_jid.split("@")[0].capitalize()),
-                        "role": "patient",
-                        "type": patient_type
-                    }
-
-                estado = "LIVRE" if data["disponivel"] else f"OCUPADO(A) com {data.get('paciente_atual')}"
-                nome_r = data.get("nome", data.get("nome_sala", data.get("nome_medico", "Recurso Desconhecido")))
-                log(SUPERVISOR, f"[DASHBOARD] {nome_r} -> {estado}", "BLUE")
-
-            elif performative == "inform" and msg_type == "waitlist_update":
-                data = json.loads(msg.body)
-                queue_name = data.get("queue")
-                patients = data.get("patients", [])
-                by_specialty = data.get("by_specialty")
-                if queue_name in GLOBAL_WAITLIST:
-                    GLOBAL_WAITLIST[queue_name] = patients
-                    grouped_key = f"{queue_name}_by_specialty"
-                    if grouped_key in GLOBAL_WAITLIST and by_specialty is not None:
-                        GLOBAL_WAITLIST[grouped_key] = by_specialty
-                    log(SUPERVISOR,
-                        f"[SALA-ESPERA] Fila '{queue_name}' atualizada ({len(patients)} doentes).",
-                        "YELLOW")
-
-            elif performative == "inform" and msg_type == "emergency_alert":
-                data = json.loads(msg.body)
-                p_jid = data.get("doente_jid")
-                
-                # Keep urgent patients marked as "Urgência" even after they are in treatment.
-                if p_jid:
-                    current = AGENT_REGISTRY.get(p_jid, {})
-                    AGENT_REGISTRY[p_jid] = {
-                        "name": data.get("nome", current.get("name", p_jid.split("@")[0])),
-                        "role": "patient",
-                        "type": "Urgência"
-                    }
-
-                log(SUPERVISOR, f"[ALERTA-EMERGÊNCIA] Recebido alerta prioritário! Doente: {data['nome']} | Prioridade: {data['prioridade']}", "RED")
-
-            elif performative == "request" and msg_type == "preemption_request":
-                data = json.loads(msg.body)
-                urgente_jid = data.get("urgente_jid") or data.get("doente_jid")
-                urgente_nome = data.get("urgente_nome") or data.get("nome", "?")
-                prioridade = data.get("prioridade")
-
-                if not urgente_jid:
-                    log(
-                        SUPERVISOR,
-                        "[PREEMPÇÃO-ERRO] Pedido de preempção inválido: urgente_jid em falta.",
-                        "RED",
-                    )
+            try:
+                msg = await self.receive(timeout=SUPERVISOR_RECEIVE_TIMEOUT_SECONDS)
+                if msg is None:
                     return
 
-                log(SUPERVISOR, f"[PREEMPÇÃO] Pedido recebido de urgências para {urgente_nome}.", "RED")
-                log(SUPERVISOR, "[PREEMPÇÃO] A despoletar protocolo dinâmico de preempção...", "RED")
+                performative = msg.get_metadata("performative")
+                msg_type = msg.get_metadata("type")
+                
+                # Debug output to stdout to see every message hitting the supervisor
+                # print(f"[{self.agent._supervisor_name}] RX: {msg_type} ({performative}) from {msg.sender}")
 
-                preempt = Message(to=jid(COORD_CONS))
-                preempt.set_metadata("performative", "request")
-                preempt.set_metadata("type", "preemption_order")
-                preempt.body = json.dumps({
-                    "urgente_jid": urgente_jid,
-                    "urgente_nome": urgente_nome,
-                    "prioridade": prioridade,
-                })
-                preempt.thread = urgente_jid
-                await self.send(preempt)
-                log(SUPERVISOR, f"[PREEMPÇÃO] Diretiva de preempção enviada para {COORD_CONS}.", "YELLOW")
+                if performative == "inform" and msg_type == "resource_status":
+                    data = json.loads(msg.body)
+                    r_jid = data.get("recurso_jid")
+                    GLOBAL_DASHBOARD[r_jid] = data
 
-            elif performative == "inform" and msg_type == "preemption_done":
-                data = json.loads(msg.body)
+                    if r_jid not in AGENT_REGISTRY:
+                        AGENT_REGISTRY[r_jid] = {
+                            "name": data.get("nome", r_jid.split("@")[0]),
+                            "role": "patient" if "doente" in r_jid.lower() else "infra",
+                            "type": "Dinâmico"
+                        }
 
-                if data.get("status") == "resources_freed":
-                    log(SUPERVISOR, "[PREEMPÇÃO-SUCESSO] Recursos libertados com sucesso por preempção.", "GREEN")
+                    p_jid = data.get("paciente_atual")
+                    if p_jid:
+                        room_info = AGENT_REGISTRY.get(r_jid, {})
+                        room_wing = room_info.get("wing")
+                        current_patient = AGENT_REGISTRY.get(p_jid, {})
+                        current_type = str(current_patient.get("type", ""))
 
-                    freed = Message(to=jid(COORD_URG))
-                    freed.set_metadata("performative", "inform")
-                    freed.set_metadata("type", "resources_freed")
-                    freed.body = json.dumps({
-                        "status": "resources_available",
-                        "medico_jid": data.get("medico_jid"),
-                        "sala_jid": data.get("sala_jid"),
+                        if room_wing == "triage" or "urg" in current_type.lower():
+                            patient_type = "Urgência"
+                        else:
+                            patient_type = current_type or "Em Atendimento"
+
+                        AGENT_REGISTRY[p_jid] = {
+                            "name": current_patient.get("name", p_jid.split("@")[0].capitalize()),
+                            "role": "patient",
+                            "type": patient_type
+                        }
+
+                    estado = "LIVRE" if data["disponivel"] else f"OCUPADO(A) com {data.get('paciente_atual')}"
+                    nome_r = data.get("nome", data.get("nome_sala", data.get("nome_medico", "Recurso Desconhecido")))
+                    log(self.agent._supervisor_name, f"[DASHBOARD] {nome_r} -> {estado}", "BLUE")
+
+                elif performative == "inform" and msg_type == "waitlist_update":
+                    data = json.loads(msg.body)
+                    queue_name = data.get("queue")
+                    patients = data.get("patients", [])
+                    by_specialty = data.get("by_specialty")
+                    # 1. Update hospital-namespaced key
+                    h_key = f"h{self.agent._hospital_id}_{queue_name}"
+                    GLOBAL_WAITLIST[h_key] = patients
+                    
+                    # 2. Update specialty grouping for this hospital
+                    grouped_key = f"{h_key}_by_specialty"
+                    if by_specialty is not None:
+                        GLOBAL_WAITLIST[grouped_key] = by_specialty
+                    
+                    # 3. Aggregated key (for backward compatibility or global views)
+                    # We overwrite with latest or we could merge, but for now we just 
+                    # ensure the key exists so old dashboard code doesn't crash.
+                    GLOBAL_WAITLIST[queue_name] = patients
+                    if by_specialty is not None:
+                        GLOBAL_WAITLIST[f"{queue_name}_by_specialty"] = by_specialty
+                    
+                    log(self.agent._supervisor_name,
+                        f"[SALA-ESPERA] Fila '{h_key}' atualizada ({len(patients)} doentes).",
+                        "YELLOW")
+
+                elif performative == "inform" and msg_type == "emergency_alert":
+                    data = json.loads(msg.body)
+                    p_jid = data.get("doente_jid")
+                    if p_jid:
+                        current = AGENT_REGISTRY.get(p_jid, {})
+                        AGENT_REGISTRY[p_jid] = {
+                            "name": data.get("nome", current.get("name", p_jid.split("@")[0])),
+                            "role": "patient",
+                            "type": "Urgência"
+                        }
+                    log(self.agent._supervisor_name,
+                        f"[ALERTA-EMERGÊNCIA] Recebido alerta prioritário! "
+                        f"Doente: {data['nome']} | Prioridade: {data['prioridade']}", "RED")
+
+                elif performative == "request" and msg_type == "preemption_request":
+                    data = json.loads(msg.body)
+                    urgente_jid = data.get("urgente_jid") or data.get("doente_jid")
+                    urgente_nome = data.get("urgente_nome") or data.get("nome", "?")
+                    prioridade = data.get("prioridade")
+
+                    if not urgente_jid:
+                        log(self.agent._supervisor_name,
+                            "[PREEMPÇÃO-ERRO] Pedido de preempção inválido: urgente_jid em falta.", "RED")
+                        return
+
+                    log(self.agent._supervisor_name,
+                        f"[PREEMPÇÃO] Pedido recebido de urgências para {urgente_nome}.", "RED")
+
+                    preempt = Message(to=self.agent._coord_cons)
+                    preempt.set_metadata("performative", "request")
+                    preempt.set_metadata("type", "preemption_order")
+                    preempt.body = json.dumps({
+                        "urgente_jid": urgente_jid,
+                        "urgente_nome": urgente_nome,
+                        "prioridade": prioridade,
                     })
-                    await self.send(freed)
-                    log(SUPERVISOR, f"[PREEMPÇÃO-SUCESSO] Coordenador de urgências notificado da disponibilidade.", "GREEN")
-                else:
-                    log(SUPERVISOR, "[PREEMPÇÃO-AVISO] Sem alocações de rotina para cancelar. Fila de espera mandatória.", "YELLOW")
+                    preempt.thread = urgente_jid
+                    await self.send(preempt)
 
-                    # Mesmo sem preempção efetiva, os recursos já podem estar livres.
-                    # Notificamos o coordenador de urgências para evitar deadlock.
-                    freed = Message(to=jid(COORD_URG))
-                    freed.set_metadata("performative", "inform")
-                    freed.set_metadata("type", "resources_freed")
-                    freed.body = json.dumps({
-                        "status": "resources_available",
+                elif performative == "inform" and msg_type == "preemption_done":
+                    data = json.loads(msg.body)
+                    if data.get("status") == "resources_freed":
+                        log(self.agent._supervisor_name,
+                            "[PREEMPÇÃO-SUCESSO] Recursos libertados com sucesso por preempção.", "GREEN")
+                        freed = Message(to=self.agent._coord_urg)
+                        freed.set_metadata("performative", "inform")
+                        freed.set_metadata("type", "resources_freed")
+                        freed.body = json.dumps({
+                            "status": "resources_available",
+                            "medico_jid": data.get("medico_jid"),
+                            "sala_jid": data.get("sala_jid"),
+                        })
+                        await self.send(freed)
+                    else:
+                        log(self.agent._supervisor_name,
+                            "[PREEMPÇÃO-AVISO] Sem alocações de rotina para cancelar. Fila de espera mandatória.",
+                            "YELLOW")
+                        freed = Message(to=self.agent._coord_urg)
+                        freed.set_metadata("performative", "inform")
+                        freed.set_metadata("type", "resources_freed")
+                        freed.body = json.dumps({"status": "resources_available"})
+                        await self.send(freed)
+
+                elif performative == "inform" and msg_type == "routing_update":
+                    data = json.loads(msg.body)
+                    timestamp = datetime.now().strftime("%H:%M:%S")
+                    data["time"] = timestamp
+                    GLOBAL_ROUTING_HISTORY.append(data)
+                    if len(GLOBAL_ROUTING_HISTORY) > 30:
+                        GLOBAL_ROUTING_HISTORY.pop(0)
+                    
+                    patient_name = data.get("nome", "?")
+                    dest_str = str(data.get("dest", "")).lower()
+                    dest_h = "H1" if "h1" in dest_str or ("coord_" in dest_str and "h2" not in dest_str) else "H2"
+                    log(self.agent._supervisor_name, 
+                        f"[ROUTING] {patient_name} encaminhado para {dest_h}", "MAGENTA")
+
+                elif performative == "cfp" and msg_type == "load_query":
+                    req_data = json.loads(msg.body)
+                    requested_specialty = req_data.get("especialidade")
+                    tipo = req_data.get("tipo", "Normal")
+                    h_id = self.agent._hospital_id
+
+                    # Pick the right queue key based on patient type
+                    if tipo == "Urgencia":
+                        base_key = f"h{h_id}_emergency"
+                        spec_key = f"h{h_id}_emergency_by_specialty"
+                    else:
+                        base_key = f"h{h_id}_routine"
+                        spec_key = f"h{h_id}_routine_by_specialty"
+
+                    total_load = len(GLOBAL_WAITLIST.get(base_key, []))
+                    by_spec = GLOBAL_WAITLIST.get(spec_key, {})
+                    spec_load = len(by_spec.get(requested_specialty, [])) if requested_specialty else 0
+
+                    reply = msg.make_reply()
+                    reply.set_metadata("performative", "propose")
+                    reply.set_metadata("type", "load_response")
+                    reply.body = json.dumps({
+                        "specialty_load": spec_load,
+                        "total_load": total_load,
+                        "hospital_id": h_id,
+                        "supervisor_jid": str(self.agent.jid),
                     })
-                    await self.send(freed)
-                    log(SUPERVISOR, "[PREEMPÇÃO-AVISO] Coordenador de urgências notificado para avançar com a fila.", "YELLOW")
+                    await self.send(reply)
+                    log(self.agent._supervisor_name,
+                        f"[LOAD-QUERY] Respondido: esp={requested_specialty}, "
+                        f"spec_load={spec_load}, total={total_load}", "CYAN")
+            except Exception as e:
+                import traceback
+                print(f"[SUPERVISOR-ERROR] Error in MonitorBehaviour: {e}")
+                traceback.print_exc()
 
     async def setup(self):
-        log(SUPERVISOR, "Supervisor initialized.", "BOLD")
+        log(self._supervisor_name, "Supervisor initialized.", "BOLD")
         self.add_behaviour(self.MonitorBehaviour())
         self.add_behaviour(self.PeriodicDumperBehaviour())

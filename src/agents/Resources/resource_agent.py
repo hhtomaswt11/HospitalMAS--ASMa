@@ -10,25 +10,36 @@ from src.config import SUPERVISOR, jid
 
 class ResourceAgent(Agent):
 
-    def __init__(self, agent_jid, password, **kwargs):
+    def __init__(self, agent_jid, password, hospital_config=None, **kwargs):
         super().__init__(agent_jid, password, **kwargs)
         self.disponivel = True
         self.paciente_atual = None
+        # hospital_config contains all hospital-specific JIDs.
+        # Falls back to H1 defaults so existing callsites with no config still work.
+        self.hospital_config = hospital_config or {}
+        self._supervisor_jid = self.hospital_config.get("supervisor", jid(SUPERVISOR))
 
     def get_resource_name(self):
         raise NotImplementedError
 
     def build_status_payload(self):
-        return {
+        payload = {
             "recurso_jid": str(self.jid),
             "nome": self.get_resource_name(),
             "disponivel": self.disponivel,
             "paciente_atual": self.paciente_atual,
             "last_activity": time.time(),
         }
+        # Optional scheduling fields — subclasses set these attributes
+        for field in ("role", "weekly_hours_used", "max_weekly_hours",
+                      "on_shift", "current_assignment_type"):
+            val = getattr(self, field, None)
+            if val is not None:
+                payload[field] = val
+        return payload
 
     def build_status_message(self):
-        msg = Message(to=jid(SUPERVISOR))
+        msg = Message(to=self._supervisor_jid)
         msg.set_metadata("performative", "inform")
         msg.set_metadata("type", "resource_status")
         msg.body = json.dumps(self.build_status_payload())
