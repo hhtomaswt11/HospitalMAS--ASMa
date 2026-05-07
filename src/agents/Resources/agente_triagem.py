@@ -72,9 +72,7 @@ class AgenteTriagem(ResourceAgent):
             log(self.agent.nome_medico,
                 f"[TRIAGEM] {nome} classificado com prioridade={self.data['prioridade']} "
                 f"e especialidade={self.data['especialidade']}.", "YELLOW")
-            self.agent.disponivel = True
-            self.agent.paciente_atual = None
-            self.agent.sala_triagem = None
+            self.agent.clear_assignment()
             await self.agent.send_status(self)
 
     class HandleTriagemBehaviour(CyclicBehaviour):
@@ -93,6 +91,7 @@ class AgenteTriagem(ResourceAgent):
                         "medico_jid": str(self.agent.jid),
                         "nome_medico": self.agent.nome_medico,
                         "slot": "next_available",
+                        "score": 0,
                     })
                     log(self.agent.nome_medico,
                         f"[TRIAGEM] Proposta enviada para {data.get('nome', '?')}.", "YELLOW")
@@ -110,6 +109,24 @@ class AgenteTriagem(ResourceAgent):
                 self.agent.paciente_atual = data.get("doente_jid")
                 self.agent.sala_triagem = data.get("sala_jid")
                 self.agent.add_behaviour(self.agent.ClassifyUrgentPatientBehaviour(data))
+
+            elif performative == "reject-proposal":
+                log(self.agent.nome_medico,
+                    "[CONTRACT-NET] Proposta de triagem rejeitada pelo coordenador; recurso mantém-se livre.",
+                    "YELLOW")
+
+            elif performative == "cancel":
+                prev = self.agent.paciente_atual
+                self.agent.clear_assignment()
+                log(self.agent.nome_medico,
+                    f"[CANCEL] Triagem cancelada/libertada (doente anterior: {prev}).",
+                    "RED")
+                await self.agent.send_status(self)
+
+            else:
+                log(self.agent.nome_medico,
+                    f"[IGNORADO] Mensagem sem handler explícito: performative={performative}, type={msg.get_metadata('type')}",
+                    "YELLOW")
 
     async def setup(self):
         log(self.nome_medico, "AgenteTriagem inicializado.", "YELLOW")

@@ -9,10 +9,13 @@ from src.config import *
 class AgenteDoente(Agent):
     
     def __init__(self, agent_jid, password, nome_doente, tipo_entrada="Normal",
-                 especialidade=None, hospital_config=None, **kwargs):
+                 tipo_original=None, especialidade=None, hospital_config=None, **kwargs):
         super().__init__(agent_jid, password, **kwargs)
         self.nome_doente = nome_doente
         self.tipo_entrada = tipo_entrada
+        # Quando o doente passa pela Triagem Geral, tipo_entrada fica "Central",
+        # mas o fluxo clínico precisa de saber se a origem era Normal ou Urgencia.
+        self.tipo_original = tipo_original or tipo_entrada
         self.especialidade = especialidade
         self.hospital_config = hospital_config  # set for Normal/Urgencia patients
 
@@ -23,6 +26,8 @@ class AgenteDoente(Agent):
                 "doente_jid": str(agent.jid),
                 "nome": agent.nome_doente,
                 "tipo": agent.tipo_entrada,
+                "tipo_original": agent.tipo_original,
+                "via_central": agent.tipo_entrada == "Central",
                 "especialidade": agent.especialidade,
             })
 

@@ -89,6 +89,7 @@ async def spawn_patient(type_entry, hospital_config):
             jid_str, PASSWORD,
             nome_doente=name,
             tipo_entrada="Central",
+            tipo_original=type_entry,
             especialidade=None,  # Central triage agent will diagnose
             hospital_config=None,  # Not bound to a hospital yet
         )
@@ -122,7 +123,8 @@ async def arrival_generator(type_entry, rate, hospital_config, agents_list):
         f"Starting {type_entry} arrival generator for [{hospital_id}] "
         f"(avg every {mean_inter_arrival:.1f}s)", "BOLD")
 
-    gen_start_time = time.time()
+    # Sincronizar com o início da simulação às 08h00
+    gen_start_time = time.time() - (8 * SIM_HOUR_SECONDS)
 
     while True:
         wait_time = random.expovariate(rate)
@@ -131,18 +133,24 @@ async def arrival_generator(type_entry, rate, hospital_config, agents_list):
         elapsed = time.time() - gen_start_time
         dia_simulado_s = elapsed % SIM_DAY_SECONDS
         
-        # O turno da noite ("night") corresponde à última parte do dia (ex: 16h - 24h)
-        is_night = (dia_simulado_s >= 2 * SHIFT_DURATION_SECONDS)
+        # Janela de fecho das consultas de rotina: 20h00 às 08h00
+        is_closed = (dia_simulado_s >= 20 * SIM_HOUR_SECONDS or dia_simulado_s < 8 * SIM_HOUR_SECONDS)
         
-        if type_entry == "Normal" and is_night:
-            # Em pausa durante a noite, tentar novamente daqui a um pouco
-            await asyncio.sleep(1)
+        if type_entry == "Normal" and is_closed:
+            # Em pausa durante o período de fecho, tentar novamente daqui a um pouco
+            await asyncio.sleep(5)
             continue
             
-        # Backpressure: se existirem mais de 150 pacientes a correr, aguardamos para não rebentar o OS (Errno 24)
-        active_patients = [p for p in agents_list if p.is_alive()]
+        # Backpressure real: contar apenas agentes-doente vivos, não a infraestrutura hospitalar.
+        active_patients = [
+            p for p in agents_list
+            if isinstance(p, AgenteDoente) and p.is_alive()
+        ]
         if len(active_patients) > 150:
-            log("SIMULATOR", f"[ALERTA] Sobrecarga do sistema ({len(active_patients)} pacientes ativos). A pausar gerador temporariamente...", "RED")
+            log("SIMULATOR",
+                f"[ALERTA] Sobrecarga do sistema ({len(active_patients)} doentes ativos reais). "
+                "A pausar gerador temporariamente...",
+                "RED")
             await asyncio.sleep(5)
             continue
 
@@ -264,7 +272,24 @@ async def main():
         agents.append(triagem_geral)
 
         await asyncio.sleep(SIM_INFRA_READY_WAIT_SECONDS)
-        log("SIMULATOR", "Infrastructure ready (H1 + H2 + Central Triage). Opening doors to patients...", "CYAN")
+        log("SIMULATOR", "Infrastructure ready (H1 + H2 + Central Triage). Synchronizing clocks...", "CYAN")
+
+        # Sincronizar o tempo inicial de todos os agentes para que o tempo simulado comece às 08h00
+        # (8 horas * 10 segundos/hora = 80 segundos de offset)
+        offset_seconds = 8 * SIM_HOUR_SECONDS
+        sim_start_ts = time.time() - offset_seconds
+        
+        for a in agents:
+            if hasattr(a, "_sim_start_time"):
+                a._sim_start_time = sim_start_ts
+            # Recalcular imediatamente a escala para evitar o falso arranque em 00h00.
+            if hasattr(a, "sync_shift_state"):
+                a.sync_shift_state(log_change=False)
+            # Resetar também a semana para o reset semanal
+            if hasattr(a, "last_week_reset"):
+                a.last_week_reset = 0
+
+        log("SIMULATOR", "Opening doors to patients (Simulation starts at 08:00)...", "CYAN")
 
         # 5. Patient generators — one pair (Normal + Urgent) per hospital
         for cfg in [H1_CONFIG, H2_CONFIG]:

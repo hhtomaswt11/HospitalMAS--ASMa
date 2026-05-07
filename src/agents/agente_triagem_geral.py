@@ -29,6 +29,8 @@ class AgenteTriagemGeral(Agent):
         self.hospital_configs = hospital_configs or [H1_CONFIG, H2_CONFIG]
         # Per-patient queues: doente_jid -> asyncio.Queue of load_response dicts
         self.pending_load_responses: dict = {}
+        import time
+        self._sim_start_time = time.time()
 
     class DiagnoseAndRouteBehaviour(OneShotBehaviour):
         """One-shot behaviour launched per patient arrival."""
@@ -40,10 +42,16 @@ class AgenteTriagemGeral(Agent):
         async def run(self):
             nome = self.data.get("nome", "?")
             doente_jid = self.data.get("doente_jid")
-            tipo = self.data.get("tipo", "Normal")
+            tipo = self.data.get("tipo_original") or self.data.get("tipo", "Normal")
+            if tipo == "Central":
+                # Salvaguarda para mensagens antigas sem tipo_original.
+                tipo = "Normal"
+            self.data["tipo"] = tipo
+            self.data["tipo_original"] = tipo
+            self.data["via_central"] = True
 
             log(UNIFIED_TRIAGE,
-                f"[TRIAGEM-GERAL] Paciente recebido: {nome} (tipo={tipo}). A diagnosticar...",
+                f"[TRIAGEM-GERAL] Paciente recebido: {nome} (tipo_original={tipo}). A diagnosticar...",
                 "MAGENTA")
 
             # 1. Diagnose: assign specialty and priority
@@ -57,10 +65,30 @@ class AgenteTriagemGeral(Agent):
                 self.data["prioridade"] = 0
 
             especialidade = self.data["especialidade"]
-            log(UNIFIED_TRIAGE,
-                f"[TRIAGEM-GERAL] {nome} diagnosticado: especialidade={especialidade}, "
-                f"tipo={tipo}, prioridade={self.data.get('prioridade')}.",
-                "MAGENTA")
+            # 1.5 Check if we can route routine patients at this hour
+            if tipo == "Normal":
+                import time
+                elapsed = time.time() - self.agent._sim_start_time
+                current_hour = (elapsed % SIM_DAY_SECONDS) / SIM_HOUR_SECONDS
+                if not (ROUTINE_START_H <= current_hour < ROUTINE_END_H):
+                    log(UNIFIED_TRIAGE,
+                        f"[TRIAGEM-GERAL] Bloqueado encaminhamento de {nome} (Rotina) - Fora do horário (Hora: {current_hour:.1f}). Alta administrativa enviada.",
+                        "MAGENTA")
+
+                    # O doente ainda não foi encaminhado para nenhum coordenador hospitalar.
+                    # Sem esta resposta explícita, o agente doente ficava vivo até ao fim da simulação.
+                    if doente_jid:
+                        msg_discharge = Message(to=doente_jid)
+                        msg_discharge.set_metadata("performative", "inform")
+                        msg_discharge.set_metadata("type", "discharge")
+                        msg_discharge.body = json.dumps({
+                            "estado": "Encaminhamento de rotina recusado fora do horario de consultas",
+                            "motivo": "fora_horario_rotina",
+                            "hora_simulada": round(current_hour, 2),
+                        })
+                        msg_discharge.thread = doente_jid
+                        await self.send(msg_discharge)
+                    return # Cancel routing for this routine patient
 
             # 2. Register a queue for this patient's load responses BEFORE sending CFPs
             queue = asyncio.Queue()

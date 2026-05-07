@@ -32,16 +32,43 @@ class AgenteMedico(ResourceAgent):
         self.role = "medic"
         self.max_weekly_hours = WEEKLY_MAX_HOURS
         self.weekly_hours_used = 0.0
-        self._sim_start_time = time.time()
-        # Turno inicial vem do AGENT_REGISTRY ("morning" começa em turno, "afternoon" começa fora)
+        # Por defeito, todos os agentes arrancam como se a simulação já estivesse às 08h00.
+        # Isto evita a oscilação inicial errada em que os turnos eram calculados como 00h00
+        # antes de o main_sim sincronizar os relógios.
+        self._sim_start_time = time.time() - (8 * SIM_HOUR_SECONDS)
         profile = AGENT_REGISTRY.get(str(agent_jid), {})
         self._shift_type = profile.get("shift", "morning")
-        self.on_shift = (self._shift_type == "morning")
+        self.on_shift = self.compute_shift_state()
         self.emergency_callable = True
         self.current_assignment_type = None
+        # Resultados assíncronos recebidos de MCDT/cirurgia, indexados por doente_jid.
+        self.pending_exam_results = {}
+        self.pending_surgery_results = {}
 
     def get_resource_name(self):
         return self.nome_medico
+
+    def compute_shift_state(self) -> bool:
+        """Calcula se o médico deve estar em turno no instante simulado atual."""
+        elapsed = time.time() - self._sim_start_time
+        dia_simulado_s = elapsed % SIM_DAY_SECONDS
+        if self._shift_type == "morning":
+            return 8 * SIM_HOUR_SECONDS <= dia_simulado_s < 16 * SIM_HOUR_SECONDS
+        if self._shift_type == "afternoon":
+            return 16 * SIM_HOUR_SECONDS <= dia_simulado_s < 24 * SIM_HOUR_SECONDS
+        return 0 <= dia_simulado_s < 8 * SIM_HOUR_SECONDS
+
+    def sync_shift_state(self, log_change: bool = True) -> bool:
+        """Sincroniza imediatamente o estado do turno após ajuste do relógio simulado."""
+        should_be_on_shift = self.compute_shift_state()
+        changed = should_be_on_shift != self.on_shift
+        self.on_shift = should_be_on_shift
+        if changed and log_change:
+            estado = "ENTROU em turno" if should_be_on_shift else "SAIU do turno"
+            log(self.nome_medico,
+                f"[ESCALA] {self.nome_medico} {estado} (turno={self._shift_type}).",
+                "YELLOW")
+        return changed
 
     def add_hours(self, procedure_type: str):
         """Accumulate simulated weekly hours for a procedure."""
@@ -62,11 +89,35 @@ class AgenteMedico(ResourceAgent):
                 f"[HORAS] {self.nome_medico} atingiu limite semanal ({self.weekly_hours_used:.0f}h). CFP recusado.", "RED")
             return False
         is_emergency = cfp_type == "emergency_cfp"
+        is_routine_consultation = cfp_type == "consultation_cfp"
+        is_clinical_continuous = cfp_type in {"emergency_cfp", "exam_cfp", "surgery_cfp", "internment_cfp"}
+
+        # A janela 08h-20h só bloqueia consultas de rotina.
+        # Exames, cirurgias e internamento fazem parte da continuidade clínica
+        # e devem depender da escala/turno/especialidade, não do horário administrativo
+        # das consultas externas.
+        if is_routine_consultation:
+            elapsed = time.time() - self._sim_start_time
+            current_hour = (elapsed % SIM_DAY_SECONDS) / SIM_HOUR_SECONDS
+            if not (ROUTINE_START_H <= current_hour < ROUTINE_END_H):
+                log(
+                    self.nome_medico,
+                    f"[HORAS] {self.nome_medico} recusou consulta de rotina: fora da janela {ROUTINE_START_H}h-{ROUTINE_END_H}h.",
+                    "RED",
+                )
+                return False
+
         if not self.on_shift:
             if is_emergency and self.emergency_callable and ALLOW_EMERGENCY_CALL_OUTSIDE_SHIFT:
                 log(self.nome_medico,
                     f"[ESCALA] {self.nome_medico} está fora do turno, mas foi chamado para urgência.", "YELLOW")
                 return True
+            if is_clinical_continuous:
+                log(
+                    self.nome_medico,
+                    f"[ESCALA] {self.nome_medico} recusou {cfp_type}: fora do turno e sem chamada extraordinária aplicável.",
+                    "YELLOW",
+                )
             return False
         return True
 
@@ -112,6 +163,15 @@ class AgenteMedico(ResourceAgent):
     def choose_exam_specialty(self):
         return random.choice([SPECIALTY_RX, SPECIALTY_TAC, SPECIALTY_ANALISES])
 
+    async def wait_for_result(self, store: dict, doente_jid: str, timeout: float):
+        """Espera por um resultado clínico real colocado pelo comportamento recetor."""
+        deadline = asyncio.get_running_loop().time() + timeout
+        while asyncio.get_running_loop().time() < deadline:
+            if doente_jid in store:
+                return store.pop(doente_jid)
+            await asyncio.sleep(0.1)
+        return None
+
     class EvaluatePatientBehaviour(OneShotBehaviour):
         def __init__(self, patient_data):
             super().__init__()
@@ -149,46 +209,69 @@ class AgenteMedico(ResourceAgent):
                     "doente_jid": doente_jid,
                     "nome": nome,
                     "tipo": "Exam",
+                    "tipo_original": self.patient_data.get("tipo", "Normal"),
                     "especialidade": exam_specialty,
-                    "solicitante": str(self.agent.jid)
+                    "solicitante": str(self.agent.jid),
                 })
+                msg_exame.thread = doente_jid
                 await self.send(msg_exame)
 
                 log(self.agent.nome_medico,
-                    f"[TRANSITO] {nome} encaminhado para diagnóstico. A libertar Consultório para novo uso.",
+                    f"[TRANSITO] {nome} encaminhado para diagnóstico. A libertar consultório enquanto aguarda resultado real do MCDT.",
                     "CYAN")
 
                 msg_finish_cons = Message(to=finish_coord)
                 msg_finish_cons.set_metadata("performative", "inform")
                 msg_finish_cons.set_metadata("type", "routine_finished")
                 msg_finish_cons.body = json.dumps({"doente_jid": doente_jid, "nome": nome})
+                msg_finish_cons.thread = doente_jid
                 await self.send(msg_finish_cons)
 
-                mcdt_snapshot = self.agent.mcdt_atual
-                self.agent.mcdt_atual = None
-                self.agent.disponivel = True
-                self.agent.paciente_atual = None
+                sala_consulta = self.agent.sala_atual
+                self.agent.clear_assignment()
                 await self.agent.send_status(self)
 
-                if self.agent.sala_atual:
-                    msg_free = Message(to=self.agent.sala_atual)
+                if sala_consulta:
+                    msg_free = Message(to=sala_consulta)
                     msg_free.set_metadata("performative", "inform")
                     msg_free.set_metadata("type", "release")
+                    msg_free.thread = doente_jid
                     await self.send(msg_free)
-                    self.agent.sala_atual = None
 
-                await asyncio.sleep(EXAM_RESULTS_WAIT_SECONDS)
+                exam_result = await self.agent.wait_for_result(
+                    self.agent.pending_exam_results,
+                    doente_jid,
+                    EXAM_RESULT_TIMEOUT_SECONDS,
+                )
 
-                if random.random() < PROB_SURGERY_AFTER_EXAM:
+                if exam_result is None:
                     log(self.agent.nome_medico,
-                        f"[CLÍNICA] Resultados de diagnóstico recebidos para {nome}. A solicitar intervenção cirúrgica urgente.",
-                        "MAGENTA")
-                    if mcdt_snapshot:
-                        msg_free_mcdt = Message(to=mcdt_snapshot)
-                        msg_free_mcdt.set_metadata("performative", "inform")
-                        msg_free_mcdt.set_metadata("type", "release")
-                        await self.send(msg_free_mcdt)
+                        f"[SYNC-TIMEOUT] Resultado de MCDT não chegou para {nome}; alta administrativa para evitar bloqueio do fluxo.",
+                        "RED")
+                    msg_discharge = Message(to=doente_jid)
+                    msg_discharge.set_metadata("performative", "inform")
+                    msg_discharge.set_metadata("type", "discharge")
+                    msg_discharge.body = json.dumps({"estado": "Alta apos timeout de exame"})
+                    msg_discharge.thread = doente_jid
+                    await self.send(msg_discharge)
+                    return
 
+                if exam_result.get("estado") == "exame_falhado":
+                    log(self.agent.nome_medico,
+                        f"[CLÍNICA] MCDT não realizado para {nome} por indisponibilidade persistente. Alta/observação administrativa.",
+                        "RED")
+                    msg_discharge = Message(to=doente_jid)
+                    msg_discharge.set_metadata("performative", "inform")
+                    msg_discharge.set_metadata("type", "discharge")
+                    msg_discharge.body = json.dumps({"estado": "Alta/observacao por exame indisponivel"})
+                    msg_discharge.thread = doente_jid
+                    await self.send(msg_discharge)
+                    return
+
+                if exam_result.get("recomenda_cirurgia"):
+                    log(self.agent.nome_medico,
+                        f"[CLÍNICA] Resultado real de diagnóstico recebido para {nome}. A solicitar intervenção cirúrgica.",
+                        "MAGENTA")
                     msg_cirurgia = Message(to=self.agent._coord_cir)
                     msg_cirurgia.set_metadata("performative", "request")
                     msg_cirurgia.set_metadata("type", "surgery_request")
@@ -196,23 +279,55 @@ class AgenteMedico(ResourceAgent):
                         "doente_jid": doente_jid,
                         "nome": nome,
                         "tipo": "Surgery",
-                        "solicitante": str(self.agent.jid)
+                        "tipo_original": self.patient_data.get("tipo", "Normal"),
+                        "solicitante": str(self.agent.jid),
+                        "exam_result": exam_result,
                     })
+                    msg_cirurgia.thread = doente_jid
                     await self.send(msg_cirurgia)
+
+                    surgery_result = await self.agent.wait_for_result(
+                        self.agent.pending_surgery_results,
+                        doente_jid,
+                        SURGERY_RESULT_TIMEOUT_SECONDS,
+                    )
+
+                    if surgery_result is None:
+                        log(self.agent.nome_medico,
+                            f"[SYNC-TIMEOUT] Resultado de cirurgia não chegou para {nome}; alta/observação administrativa para evitar bloqueio.",
+                            "RED")
+                        msg_discharge = Message(to=doente_jid)
+                        msg_discharge.set_metadata("performative", "inform")
+                        msg_discharge.set_metadata("type", "discharge")
+                        msg_discharge.body = json.dumps({"estado": "Alta/observacao por timeout de cirurgia"})
+                        msg_discharge.thread = doente_jid
+                        await self.send(msg_discharge)
+                        return
+
+                    if surgery_result.get("estado") == "cirurgia_concluida":
+                        log(self.agent.nome_medico,
+                            f"[CLÍNICA] Resultado real de cirurgia recebido para {nome}. Seguimento transferido para recobro/internamento.",
+                            "MAGENTA")
+                    else:
+                        log(self.agent.nome_medico,
+                            f"[CLÍNICA] Cirurgia não realizada para {nome} por indisponibilidade persistente. Alta/observação administrativa.",
+                            "RED")
+                        msg_discharge = Message(to=doente_jid)
+                        msg_discharge.set_metadata("performative", "inform")
+                        msg_discharge.set_metadata("type", "discharge")
+                        msg_discharge.body = json.dumps({"estado": "Alta/observacao por cirurgia indisponivel"})
+                        msg_discharge.thread = doente_jid
+                        await self.send(msg_discharge)
                 else:
                     log(self.agent.nome_medico,
-                        f"[CLÍNICA] Resultados de diagnóstico para {nome} normais. Alta médica concedida.",
+                        f"[CLÍNICA] Resultado real de diagnóstico para {nome} sem indicação cirúrgica. Alta médica concedida.",
                         "BLUE")
                     msg_discharge = Message(to=doente_jid)
                     msg_discharge.set_metadata("performative", "inform")
                     msg_discharge.set_metadata("type", "discharge")
                     msg_discharge.body = json.dumps({"estado": "Alta apos exame"})
+                    msg_discharge.thread = doente_jid
                     await self.send(msg_discharge)
-                    if mcdt_snapshot:
-                        msg_free_mcdt = Message(to=mcdt_snapshot)
-                        msg_free_mcdt.set_metadata("performative", "inform")
-                        msg_free_mcdt.set_metadata("type", "release")
-                        await self.send(msg_free_mcdt)
             else:
                 if is_urgent:
                     log(self.agent.nome_medico,
@@ -244,8 +359,8 @@ class AgenteMedico(ResourceAgent):
                     msg_discharge.body = json.dumps({"estado": "Alta clinica concedida"})
                     await self.send(msg_discharge)
 
-                self.agent.disponivel = True
-                self.agent.paciente_atual = None
+                sala_consulta = self.agent.sala_atual
+                self.agent.clear_assignment()
                 await self.agent.send_status(self)
 
                 msg_finish_cons = Message(to=finish_coord)
@@ -254,12 +369,12 @@ class AgenteMedico(ResourceAgent):
                 msg_finish_cons.body = json.dumps({"doente_jid": doente_jid, "nome": nome})
                 await self.send(msg_finish_cons)
 
-                if self.agent.sala_atual:
-                    msg_free_sala = Message(to=self.agent.sala_atual)
+                if sala_consulta:
+                    msg_free_sala = Message(to=sala_consulta)
                     msg_free_sala.set_metadata("performative", "inform")
                     msg_free_sala.set_metadata("type", "release")
+                    msg_free_sala.thread = doente_jid
                     await self.send(msg_free_sala)
-                    self.agent.sala_atual = None
 
     class ExecuteProcedureBehaviour(OneShotBehaviour):
         def __init__(self, patient_data):
@@ -268,30 +383,46 @@ class AgenteMedico(ResourceAgent):
 
         async def run(self):
             nome = self.patient_data.get("nome", "?")
+            doente_jid = self.patient_data.get("doente_jid")
+            bloco = self.agent.bloco_atual or self.patient_data.get("sala_jid")
             await asyncio.sleep(SURGERY_DURATION_SECONDS)
             log(self.agent.nome_medico,
                 f"[CIRURGIA] Procedimento cirúrgico a {nome} concluído. Doente transferido para o recobro.",
                 "GREEN")
 
-            self.agent.disponivel = True
-            self.agent.paciente_atual = None
-            await self.agent.send_status(self)
-
-            if self.agent.bloco_atual:
-                msg_free_bloco = Message(to=self.agent.bloco_atual)
+            if bloco:
+                msg_free_bloco = Message(to=bloco)
                 msg_free_bloco.set_metadata("performative", "inform")
                 msg_free_bloco.set_metadata("type", "release")
+                msg_free_bloco.thread = doente_jid
                 await self.send(msg_free_bloco)
-                self.agent.bloco_atual = None
+
+            self.agent.clear_assignment()
+            await self.agent.send_status(self)
+
+            solicitante = self.patient_data.get("solicitante")
+            if solicitante:
+                result = Message(to=solicitante)
+                result.set_metadata("performative", "inform")
+                result.set_metadata("type", "surgery_result")
+                result.body = json.dumps({
+                    "doente_jid": doente_jid,
+                    "nome": nome,
+                    "estado": "cirurgia_concluida",
+                    "sala_jid": bloco,
+                })
+                result.thread = doente_jid
+                await self.send(result)
 
             msg_int = Message(to=self.agent._coord_int)
             msg_int.set_metadata("performative", "request")
             msg_int.set_metadata("type", "internment_request")
             msg_int.body = json.dumps({
-                "doente_jid": self.patient_data.get("doente_jid"),
+                "doente_jid": doente_jid,
                 "nome": nome,
                 "solicitante": str(self.agent.jid),
             })
+            msg_int.thread = doente_jid
             await self.send(msg_int)
             log(self.agent.nome_medico, f"[CIRURGIA] Pedido de internamento emitido para {nome}.", "YELLOW")
 
@@ -302,17 +433,40 @@ class AgenteMedico(ResourceAgent):
 
         async def run(self):
             nome = self.patient_data.get("nome", "?")
+            doente_jid = self.patient_data.get("doente_jid")
             sala_jid = self.patient_data.get("sala_jid")
             await asyncio.sleep(EXAM_DURATION_SECONDS)
-            log(self.agent.nome_medico, f"[EXAME] Exame concluido para {nome}.", "CYAN")
-            self.agent.disponivel = True
-            self.agent.paciente_atual = None
-            await self.agent.send_status(self)
+            recomenda_cirurgia = random.random() < PROB_SURGERY_AFTER_EXAM
+            log(self.agent.nome_medico,
+                f"[EXAME] Exame concluído para {nome}. Recomenda cirurgia={recomenda_cirurgia}.",
+                "CYAN")
+
+            solicitante = self.patient_data.get("solicitante")
+            if solicitante:
+                result = Message(to=solicitante)
+                result.set_metadata("performative", "inform")
+                result.set_metadata("type", "exam_result")
+                result.body = json.dumps({
+                    "doente_jid": doente_jid,
+                    "nome": nome,
+                    "especialidade": self.patient_data.get("especialidade"),
+                    "estado": "exame_concluido",
+                    "sala_jid": sala_jid,
+                    "medico_exame": str(self.agent.jid),
+                    "recomenda_cirurgia": recomenda_cirurgia,
+                })
+                result.thread = doente_jid
+                await self.send(result)
+
             if sala_jid:
                 msg_free = Message(to=sala_jid)
                 msg_free.set_metadata("performative", "inform")
                 msg_free.set_metadata("type", "release")
+                msg_free.thread = doente_jid
                 await self.send(msg_free)
+
+            self.agent.clear_assignment()
+            await self.agent.send_status(self)
 
     class ManageInternmentBehaviour(OneShotBehaviour):
         def __init__(self, data):
@@ -332,12 +486,17 @@ class AgenteMedico(ResourceAgent):
                 msg_release = Message(to=sala_jid)
                 msg_release.set_metadata("performative", "inform")
                 msg_release.set_metadata("type", "release")
+                msg_release.thread = self.data.get("doente_jid")
                 await self.send(msg_release)
+
+            self.agent.clear_assignment()
+            await self.agent.send_status(self)
 
             done = Message(to=self.agent._coord_int)
             done.set_metadata("performative", "inform")
             done.set_metadata("type", "internment_finished")
             done.body = json.dumps({"doente_jid": self.data.get("doente_jid"), "nome": nome})
+            done.thread = self.data.get("doente_jid")
             await self.send(done)
             log(self.agent.nome_medico, f"[INTERNAMENTO] Alta automatica concluida para {nome}.", "GREEN")
 
@@ -345,6 +504,7 @@ class AgenteMedico(ResourceAgent):
             msg_discharge.set_metadata("performative", "inform")
             msg_discharge.set_metadata("type", "discharge")
             msg_discharge.body = json.dumps({"estado": "Alta de internamento"})
+            msg_discharge.thread = self.data.get("doente_jid")
             await self.send(msg_discharge)
 
     class HandleProposalsBehaviour(CyclicBehaviour):
@@ -435,26 +595,51 @@ class AgenteMedico(ResourceAgent):
             elif performative == "inform" and msg.get_metadata("type") == "allocation_confirmed":
                 data = json.loads(msg.body)
                 if data["procedure"] == "exam":
-                    agent.mcdt_atual = data["sala_jid"]
                     log(agent.nome_medico,
-                        f"[SYNC] Confirmation: Equipment {data['sala_jid']} locked for exam.", "CYAN")
+                        f"[SYNC] MCDT alocado para {data.get('doente_jid', '?')}: equipamento={data.get('sala_jid', '?')}. A aguardar exam_result real.",
+                        "CYAN")
                 elif data["procedure"] == "surgery":
-                    agent.bloco_atual = data["sala_jid"]
                     log(agent.nome_medico,
-                        f"[SYNC] Confirmation: Block {data['sala_jid']} locked for surgery.", "MAGENTA")
+                        f"[SYNC] Cirurgia alocada para {data.get('doente_jid', '?')}: bloco={data.get('sala_jid', '?')}. A execução termina via surgery_result.",
+                        "MAGENTA")
                 elif data["procedure"] == "internment":
                     nome = data.get("nome", "?")
                     log(agent.nome_medico,
                         f"[INTERNAMENTO] Decisão clínica tomada: {nome} internado. "
                         f"Doente sob vigilância de enfermagem. Médico disponível.", "YELLOW")
-                    # Doctor is freed — nurse manages the internment duration
+
+            elif performative == "inform" and msg.get_metadata("type") == "exam_result":
+                data = json.loads(msg.body)
+                key = data.get("doente_jid") or msg.thread
+                if key:
+                    agent.pending_exam_results[key] = data
+                    log(agent.nome_medico,
+                        f"[SYNC] Resultado real de MCDT recebido para {data.get('nome', key)}.",
+                        "CYAN")
+
+            elif performative == "inform" and msg.get_metadata("type") == "surgery_result":
+                data = json.loads(msg.body)
+                key = data.get("doente_jid") or msg.thread
+                if key:
+                    agent.pending_surgery_results[key] = data
+                log(agent.nome_medico,
+                    f"[SYNC] Resultado de cirurgia recebido para {data.get('nome', key)}.",
+                    "MAGENTA")
+
+            elif performative == "inform" and msg.get_metadata("type") == "internment_failed":
+                data = json.loads(msg.body)
+                log(agent.nome_medico,
+                    f"[INTERNAMENTO] Internamento indisponível para {data.get('nome', data.get('doente_jid', '?'))}; doente já foi notificado para alta/observação.",
+                    "RED")
+
+            elif performative == "reject-proposal":
+                log(agent.nome_medico,
+                    "[CONTRACT-NET] Proposta rejeitada pelo coordenador; médico mantém-se livre.",
+                    "CYAN")
 
             elif performative == "cancel":
                 prev = agent.paciente_atual
-                agent.disponivel = True
-                agent.paciente_atual = None
-                agent.sala_atual = None
-                agent.current_assignment_type = None
+                agent.clear_assignment()
                 log(agent.nome_medico,
                     f"[PREEMPTION] Preemption triggered. Resource freed (previous patient ID: {prev}).", "RED")
                 await self.agent.send_status(self)
@@ -465,28 +650,18 @@ class AgenteMedico(ResourceAgent):
                 reply.body = json.dumps({"medico_jid": str(agent.jid), "status": "freed"})
                 await self.send(reply)
 
+            else:
+                log(agent.nome_medico,
+                    f"[IGNORADO] Mensagem sem handler explícito: performative={performative}, type={msg.get_metadata('type')}",
+                    "YELLOW")
+
     class ShiftRotationBehaviour(PeriodicBehaviour):
         """
         Verifica a cada período de tempo em que turno o dia simulado vai.
         """
         async def run(self):
             agent = self.agent
-            elapsed = time.time() - agent._sim_start_time
-            dia_simulado_s = elapsed % SIM_DAY_SECONDS
-            
-            if agent._shift_type == "morning":
-                should_be_on_shift = (0 <= dia_simulado_s < SHIFT_DURATION_SECONDS)
-            elif agent._shift_type == "afternoon":
-                should_be_on_shift = (SHIFT_DURATION_SECONDS <= dia_simulado_s < 2 * SHIFT_DURATION_SECONDS)
-            else: # night
-                should_be_on_shift = (2 * SHIFT_DURATION_SECONDS <= dia_simulado_s)
-
-            if should_be_on_shift != agent.on_shift:
-                agent.on_shift = should_be_on_shift
-                estado = "ENTROU em turno" if should_be_on_shift else "SAIU do turno"
-                log(agent.nome_medico,
-                    f"[ESCALA] {agent.nome_medico} {estado} "
-                    f"(turno={agent._shift_type}).", "YELLOW")
+            if agent.sync_shift_state(log_change=True):
                 await agent.send_status(self)
 
     class WeeklyResetBehaviour(PeriodicBehaviour):

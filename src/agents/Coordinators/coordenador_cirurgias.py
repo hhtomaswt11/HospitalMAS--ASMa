@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 
 from spade.agent import Agent
 from spade.behaviour import CyclicBehaviour
@@ -9,6 +10,7 @@ from src.config import *
 
 
 class CoordenadorCirurgias(Agent):
+    """Coordena cirurgias com fila, backoff e resultado explícito para o médico solicitante."""
 
     def __init__(self, agent_jid, password, hospital_config=None, **kwargs):
         super().__init__(agent_jid, password, **kwargs)
@@ -26,9 +28,27 @@ class CoordenadorCirurgias(Agent):
             return False
         if doente_jid in self.pending_surgery_patient_ids:
             return False
+        data.setdefault("_retry_count", 0)
+        data.setdefault("_next_retry_at", 0.0)
         self.pending_surgery_requests.append(data)
         self.pending_surgery_patient_ids.add(doente_jid)
         return True
+
+    def get_ready_surgery_index(self):
+        now = time.monotonic()
+        for idx, request in enumerate(self.pending_surgery_requests):
+            if float(request.get("_next_retry_at", 0.0)) <= now:
+                return idx
+        return None
+
+    def schedule_surgery_retry(self, data):
+        retries = int(data.get("_retry_count", 0)) + 1
+        data["_retry_count"] = retries
+        if retries >= SURGERY_MAX_RETRIES:
+            return None, retries, True
+        delay = min(SURGERY_RETRY_BASE_SECONDS * (2 ** (retries - 1)), SURGERY_RETRY_MAX_SECONDS)
+        data["_next_retry_at"] = time.monotonic() + delay
+        return delay, retries, False
 
     class SurgeryCoordinatorBehaviour(CyclicBehaviour):
 
@@ -43,23 +63,70 @@ class CoordenadorCirurgias(Agent):
                 else:
                     log(self.agent._coord_name,
                         f"[FILA-CIR] Pedido duplicado ignorado: {data.get('nome', '?')}", "YELLOW")
+            else:
+                return
+
+        async def notify_surgery_failure(self, patient_data, reason):
+            doente_jid = patient_data.get("doente_jid")
+            nome = patient_data.get("nome", "?")
+            solicitante = patient_data.get("solicitante")
+            payload = {
+                "doente_jid": doente_jid,
+                "nome": nome,
+                "estado": "cirurgia_falhada",
+                "motivo": reason,
+            }
+            if solicitante:
+                result = Message(to=solicitante)
+                result.set_metadata("performative", "inform")
+                result.set_metadata("type", "surgery_result")
+                result.body = json.dumps(payload)
+                result.thread = doente_jid
+                await self.send(result)
+            elif doente_jid:
+                discharge = Message(to=doente_jid)
+                discharge.set_metadata("performative", "inform")
+                discharge.set_metadata("type", "discharge")
+                discharge.body = json.dumps({"estado": "Alta/observacao por cirurgia indisponivel"})
+                discharge.thread = doente_jid
+                await self.send(discharge)
+            log(self.agent._coord_name,
+                f"[CIRURGIA-FALHADA] {nome}: {reason}. Solicitante notificado.",
+                "RED")
 
         async def dispatch_next_surgery(self):
-            if not self.agent.pending_surgery_requests:
+            idx = self.agent.get_ready_surgery_index()
+            if idx is None:
                 return False
-            patient = self.agent.pending_surgery_requests[0]
+
+            patient = self.agent.pending_surgery_requests[idx]
             allocated = await self.run_surgery_contract_net(patient)
             if allocated:
-                removed = self.agent.pending_surgery_requests.pop(0)
+                removed = self.agent.pending_surgery_requests.pop(idx)
                 self.agent.pending_surgery_patient_ids.discard(removed.get("doente_jid"))
                 return True
+
+            delay, retries, failed = self.agent.schedule_surgery_retry(patient)
+            if failed:
+                removed = self.agent.pending_surgery_requests.pop(idx)
+                self.agent.pending_surgery_patient_ids.discard(removed.get("doente_jid"))
+                await self.notify_surgery_failure(
+                    removed,
+                    f"sem bloco/cirurgião disponível após {SURGERY_MAX_RETRIES} tentativas",
+                )
+                return True
+
+            log(self.agent._coord_name,
+                f"[FILA-CIR] Re-tentativa para {patient.get('nome', '?')} adiada {delay:.0f}s "
+                f"(tentativa={retries}/{SURGERY_MAX_RETRIES}).",
+                "YELLOW")
             return False
 
         async def dispatch_surgery_batch(self, max_dispatches=DISPATCH_BATCH_LIMIT):
             dispatched = 0
             while dispatched < max_dispatches and self.agent.pending_surgery_requests:
-                allocated = await self.dispatch_next_surgery()
-                if not allocated:
+                progressed = await self.dispatch_next_surgery()
+                if not progressed:
                     break
                 dispatched += 1
 
@@ -82,6 +149,22 @@ class CoordenadorCirurgias(Agent):
                 else:
                     log(self.agent._coord_name,
                         f"[FILA-CIR] Pedido duplicado ignorado: {data.get('nome', '?')}", "YELLOW")
+            else:
+                await self.handle_out_of_band_message(msg)
+
+        async def reject_unselected(self, propostas, selected_jid, jid_key, doente_jid, motivo):
+            for proposta in propostas:
+                target = proposta.get(jid_key)
+                if not target or target == selected_jid:
+                    continue
+                rej = Message(to=target)
+                rej.set_metadata("performative", "reject-proposal")
+                rej.body = json.dumps({"motivo": motivo, "doente_jid": doente_jid})
+                rej.thread = doente_jid
+                await self.send(rej)
+
+        async def reject_all(self, propostas, jid_key, doente_jid, motivo):
+            await self.reject_unselected(propostas, None, jid_key, doente_jid, motivo)
 
         async def run_surgery_contract_net(self, patient_data):
             agent = self.agent
@@ -131,16 +214,18 @@ class CoordenadorCirurgias(Agent):
                     continue
                 received_replies += 1
                 perf = reply.get_metadata("performative")
-                body = json.loads(reply.body)
+                try:
+                    body = json.loads(reply.body) if reply.body else {}
+                except Exception:
+                    body = {}
                 if perf == "propose":
                     if "sala_jid" in body:
                         bloco_propostas.append(body)
                     elif "medico_jid" in body:
                         medico_propostas.append(body)
 
-
-            bloco_proposta = bloco_propostas[0] if bloco_propostas else None
-            medico_proposta = medico_propostas[0] if medico_propostas else None
+            bloco_proposta = min(bloco_propostas, key=lambda p: p.get("score", 999)) if bloco_propostas else None
+            medico_proposta = min(medico_propostas, key=lambda p: p.get("score", 999)) if medico_propostas else None
 
             if bloco_proposta and medico_proposta:
                 acc_b = Message(to=bloco_proposta["sala_jid"])
@@ -155,29 +240,14 @@ class CoordenadorCirurgias(Agent):
                     "doente_jid": doente_jid,
                     "nome": nome,
                     "sala_jid": bloco_proposta["sala_jid"],
+                    "solicitante": patient_data.get("solicitante"),
+                    "tipo_original": patient_data.get("tipo_original", patient_data.get("tipo")),
                 })
                 acc_m.thread = doente_jid
                 await self.send(acc_m)
 
-                for proposta in bloco_propostas:
-                    s_jid = proposta.get("sala_jid")
-                    if not s_jid or s_jid == bloco_proposta["sala_jid"]:
-                        continue
-                    rej = Message(to=s_jid)
-                    rej.set_metadata("performative", "reject-proposal")
-                    rej.body = json.dumps({"motivo": "Proposta não selecionada", "doente_jid": doente_jid})
-                    rej.thread = doente_jid
-                    await self.send(rej)
-
-                for proposta in medico_propostas:
-                    m_jid = proposta.get("medico_jid")
-                    if not m_jid or m_jid == medico_proposta["medico_jid"]:
-                        continue
-                    rej = Message(to=m_jid)
-                    rej.set_metadata("performative", "reject-proposal")
-                    rej.body = json.dumps({"motivo": "Proposta não selecionada", "doente_jid": doente_jid})
-                    rej.thread = doente_jid
-                    await self.send(rej)
+                await self.reject_unselected(bloco_propostas, bloco_proposta["sala_jid"], "sala_jid", doente_jid, "Proposta não selecionada")
+                await self.reject_unselected(medico_propostas, medico_proposta["medico_jid"], "medico_jid", doente_jid, "Proposta não selecionada")
 
                 log(agent._coord_name,
                     f"[ALOCAÇÃO] CIRURGIA AGENDADA: {nome} → "
@@ -194,12 +264,15 @@ class CoordenadorCirurgias(Agent):
                         "sala_jid": bloco_proposta["sala_jid"],
                         "procedure": "surgery"
                     })
+                    notif.thread = doente_jid
                     await self.send(notif)
                 return True
-            else:
-                log(agent._coord_name,
-                    f"[ALLOCATION-FAILED] No valid surgical resources available for {nome}.", "RED")
-                return False
+
+            await self.reject_all(bloco_propostas, "sala_jid", doente_jid, "Sem par bloco/cirurgião completo")
+            await self.reject_all(medico_propostas, "medico_jid", doente_jid, "Sem par bloco/cirurgião completo")
+            log(agent._coord_name,
+                f"[ALLOCATION-FAILED] No valid surgical resources available for {nome}.", "RED")
+            return False
 
     async def setup(self):
         log(self._coord_name, "Coordenador de Cirurgias iniciado.", "MAGENTA")

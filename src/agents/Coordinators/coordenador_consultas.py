@@ -19,6 +19,8 @@ class CoordenadorConsultas(Agent):
         self._salas = cfg["salas"]
         self._agent_registry = AGENT_REGISTRY
         self._coord_name = str(agent_jid).split("@")[0]
+        import time
+        self._sim_start_time = time.time()
 
         self.alocacoes = {}
         self.pending_requests = {s: [] for s in ROUTINE_SPECIALTIES}
@@ -253,6 +255,17 @@ class CoordenadorConsultas(Agent):
                 dispatched += 1
 
         async def dispatch_next_routine(self):
+            # Verificação rigorosa de horário
+            import time
+            elapsed = time.time() - self.agent._sim_start_time
+            current_hour = (elapsed % SIM_DAY_SECONDS) / SIM_HOUR_SECONDS
+            
+            if not (ROUTINE_START_H <= current_hour < ROUTINE_END_H):
+                # Se houver pedidos, apenas avisar que está fora de horas (uma vez por ciclo)
+                if self.agent.has_pending_requests():
+                     pass # Silencioso para não inundar o log, os médicos já rejeitam no CFP
+                return False
+
             if self.agent.routine_hold and not self.agent.blocked_specialties:
                 log(self.agent._coord_name,
                     "[PRIORIDADE] Rotina temporariamente bloqueada: urgências em espera.",
@@ -379,8 +392,8 @@ class CoordenadorConsultas(Agent):
             if agent.routine_hold and not agent.blocked_specialties:
                 return False
 
-            medico_proposta = medico_propostas[0] if medico_propostas else None
-            sala_proposta = sala_propostas[0] if sala_propostas else None
+            medico_proposta = min(medico_propostas, key=lambda p: p.get("score", 999)) if medico_propostas else None
+            sala_proposta = min(sala_propostas, key=lambda p: p.get("score", 999)) if sala_propostas else None
 
             if medico_proposta and sala_proposta:
                 acc_m = Message(to=medico_proposta["medico_jid"])

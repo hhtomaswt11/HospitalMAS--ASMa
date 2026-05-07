@@ -70,7 +70,7 @@ class Supervisor(Agent):
                 import time
                 elapsed = time.time() - self.agent._sim_start_time
                 total_hours = elapsed / SIM_HOUR_SECONDS
-                absolute_hours = total_hours + 8 # A simulação começa às 08:00 da manhã
+                absolute_hours = total_hours
                 
                 day = int(absolute_hours // 24) + 1
                 hour = int(absolute_hours % 24)

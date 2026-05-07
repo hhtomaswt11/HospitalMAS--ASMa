@@ -248,8 +248,8 @@ class CoordenadorUrgencias(Agent):
                         sala_propostas.append(body)
                 # Removido break precoce para processar todas as respostas
 
-            medico_proposta = medico_propostas[0] if medico_propostas else None
-            sala_proposta = sala_propostas[0] if sala_propostas else None
+            medico_proposta = min(medico_propostas, key=lambda p: p.get("score", 999)) if medico_propostas else None
+            sala_proposta = min(sala_propostas, key=lambda p: p.get("score", 999)) if sala_propostas else None
 
             if medico_proposta and sala_proposta:
                 acc_m = Message(to=medico_proposta["medico_jid"])

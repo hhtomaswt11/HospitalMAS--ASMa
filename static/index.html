@@ -595,7 +595,9 @@
         </div>
 
         <div class="header-meta">
-            <div id="sim-clock" style="font-family:'JetBrains Mono',monospace; color:var(--accent-cyan); font-weight:700; background:rgba(6,182,212,0.1); padding:0.2rem 0.6rem; border-radius:0.5rem; border:1px solid rgba(6,182,212,0.3);">[Dia 1 - 00:00]</div>
+            <div id="sim-clock"
+                style="font-family:'JetBrains Mono',monospace; color:var(--accent-cyan); font-weight:700; background:rgba(6,182,212,0.1); padding:0.2rem 0.6rem; border-radius:0.5rem; border:1px solid rgba(6,182,212,0.3);">
+                [Dia 1 - 00:00]</div>
             <div>STATUS: <span style="color: var(--success); font-weight:700;">CONNECTED</span></div>
             <div id="header-view-label"></div>
         </div>
@@ -846,31 +848,13 @@
                 subtitle = `${urgencyPrefix} • ${formatSpecialty(info.specialty)}`;
             }
 
-            // ── Scheduling: avatar border color + compact hours row ──
+            // ── Scheduling: removed colored borders and hours row ──
             let avatarBorder = '';
             let scheduleBadge = '';
-            if (resourceState && (type === 'medic' || type === 'nurse')) {
-                const hours   = resourceState.weekly_hours_used;
-                const maxH    = resourceState.max_weekly_hours || 40;
-                const onShift = resourceState.on_shift;
-                if (hours !== undefined) {
-                    const pct      = Math.min(100, Math.round((hours / maxH) * 100));
-                    const barColor = pct >= 100 ? 'var(--error)' : pct >= 75 ? '#f59e0b' : 'var(--success)';
-                    const ringColor = onShift ? '#22c55e' : '#f59e0b';
-                    avatarBorder = `box-shadow:0 0 0 2.5px ${ringColor};`;
-                    scheduleBadge = `
-                        <div style="margin-top:3px;display:flex;align-items:center;gap:5px;white-space:nowrap;">
-                            <span style="font-size:0.6rem;color:var(--text-muted);">${Math.round(hours)}/${maxH}h</span>
-                            <div style="width:36px;height:3px;background:var(--border);border-radius:2px;flex-shrink:0;">
-                                <div style="width:${pct}%;height:100%;background:${barColor};border-radius:2px;transition:width 0.4s;"></div>
-                            </div>
-                        </div>`;
-                }
-            }
 
             const avatarClass = type === 'medic' ? 'avatar-medic'
-                              : type === 'nurse' ? 'avatar-medic'
-                              : isEmergency ? 'avatar-emergency' : 'avatar-patient';
+                : type === 'nurse' ? 'avatar-medic'
+                    : isEmergency ? 'avatar-emergency' : 'avatar-patient';
 
             return `
                 <div class="entity-card ${isInteracting ? 'interacting' : ''}" id="card-${jid.split('@')[0]}">
@@ -917,12 +901,23 @@
 
             Object.keys(ENTITIES.medics).forEach(jid => {
                 const info = ENTITIES.medics[jid];
-                if (info && info.hospital == hospitalId) filteredMedics[jid] = info;
+                if (info && info.hospital == hospitalId) {
+                    const state = resources[jid] || {};
+                    // Mostrar apenas se estiver em turno OU ocupado a acabar um atendimento
+                    if (state.on_shift || (state.disponivel === false)) {
+                        filteredMedics[jid] = info;
+                    }
+                }
             });
 
             Object.keys(ENTITIES.nurses || {}).forEach(jid => {
                 const info = ENTITIES.nurses[jid];
-                if (info && info.hospital == hospitalId) filteredNurses[jid] = info;
+                if (info && info.hospital == hospitalId) {
+                    const state = resources[jid] || {};
+                    if (state.on_shift || (state.disponivel === false)) {
+                        filteredNurses[jid] = info;
+                    }
+                }
             });
 
             const inRoomPatients = new Set();
@@ -989,16 +984,20 @@
             const triageQueue = Array.isArray(waitlist.triage) ? waitlist.triage : [];
             const routineQueue = Array.isArray(waitlist.routine) ? waitlist.routine : [];
             const emergencyQueue = Array.isArray(waitlist.emergency) ? waitlist.emergency : [];
+            const internmentQueue = Array.isArray(waitlist.internment) ? waitlist.internment : [];
             const queueMap = new Map();
 
             triageQueue.forEach(p => { const pj = p?.doente_jid; if (pj && !queueMap.has(pj)) queueMap.set(pj, { ...p, queueType: 'triage' }); });
             emergencyQueue.forEach(p => { const pj = p?.doente_jid; if (pj && !queueMap.has(pj)) queueMap.set(pj, { ...p, queueType: 'emergency' }); });
             routineQueue.forEach(p => { const pj = p?.doente_jid; if (pj && !queueMap.has(pj)) queueMap.set(pj, { ...p, queueType: 'routine' }); });
+            internmentQueue.forEach(p => { const pj = p?.doente_jid; if (pj && !queueMap.has(pj)) queueMap.set(pj, { ...p, queueType: 'internment' }); });
 
             const triageQueueItems = [];
+            const internmentQueueItems = [];
             const mergedBySpecialty = {};
             queueMap.forEach(qp => {
                 if (qp.queueType === 'triage') { triageQueueItems.push(qp); return; }
+                if (qp.queueType === 'internment') { internmentQueueItems.push(qp); return; }
                 const sp = qp.especialidade || 'sem_especialidade';
                 if (!mergedBySpecialty[sp]) mergedBySpecialty[sp] = [];
                 mergedBySpecialty[sp].push(qp);
@@ -1023,6 +1022,7 @@
 
             let loungeHtml = '';
             if (triageQueueItems.length) loungeHtml += renderQueueGroup('Triagem', triageQueueItems);
+            if (internmentQueueItems.length) loungeHtml += renderQueueGroup('Internamento', internmentQueueItems);
             Object.keys(mergedBySpecialty).forEach(sp => {
                 loungeHtml += renderQueueGroup(formatSpecialty(sp), mergedBySpecialty[sp]);
             });
@@ -1179,7 +1179,7 @@
             try {
                 const res = await fetch('/api/state');
                 const data = await res.json();
-                
+
                 if (data.sim_time) {
                     const d = data.sim_time.day;
                     const h = data.sim_time.hour.toString().padStart(2, '0');

@@ -22,6 +22,20 @@ class ResourceAgent(Agent):
     def get_resource_name(self):
         raise NotImplementedError
 
+    def clear_assignment(self):
+        """Liberta o recurso e limpa todos os campos auxiliares de alocação."""
+        self.disponivel = True
+        self.paciente_atual = None
+        for field in (
+            "current_assignment_type",
+            "sala_atual",
+            "mcdt_atual",
+            "bloco_atual",
+            "sala_triagem",
+        ):
+            if hasattr(self, field):
+                setattr(self, field, None)
+
     def build_status_payload(self):
         payload = {
             "recurso_jid": str(self.jid),

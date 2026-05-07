@@ -38,6 +38,7 @@ class AgenteSala(ResourceAgent):
                         "sala_jid": str(agent.jid),
                         "nome_sala": agent.nome_sala,
                         "slot": "next_available",
+                        "score": 0,
                     })
                     log(agent.nome_sala, "[PROPOSAL] Proposal emitted (Status: Available).", "MAGENTA")
                 else:
@@ -58,15 +59,13 @@ class AgenteSala(ResourceAgent):
 
             elif performative == "inform" and msg.get_metadata("type") == "release":
                 prev = agent.paciente_atual
-                agent.disponivel = True
-                agent.paciente_atual = None
+                agent.clear_assignment()
                 log(agent.nome_sala, f"[LIBERTAÇÃO] Procedimento concluído com sucesso. Instalação livre (doente anterior: {prev}).", "GREEN")
                 await self.agent.send_status(self)
 
             elif performative == "cancel":
                 prev = agent.paciente_atual
-                agent.disponivel = True
-                agent.paciente_atual = None
+                agent.clear_assignment()
                 log(agent.nome_sala, f"[PREEMPTION] Preemption triggered. Resource freed (previous patient ID: {prev}).", "RED")
                 await self.agent.send_status(self)
 
@@ -78,6 +77,14 @@ class AgenteSala(ResourceAgent):
                     "status": "freed",
                 })
                 await self.send(reply)
+
+            elif performative == "reject-proposal":
+                log(agent.nome_sala, "[CONTRACT-NET] Proposta rejeitada pelo coordenador; sala mantém-se livre.", "MAGENTA")
+
+            else:
+                log(agent.nome_sala,
+                    f"[IGNORADO] Mensagem sem handler explícito: performative={performative}, type={msg.get_metadata('type')}",
+                    "YELLOW")
 
     async def setup(self):
         log(self.nome_sala, f"AgenteSala initialized (available={self.disponivel})", "MAGENTA")

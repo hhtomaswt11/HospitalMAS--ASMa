@@ -2,10 +2,10 @@ import os
 from datetime import datetime
 from dotenv import load_dotenv
 
-load_dotenv()
+# load_dotenv()
 
-#from src.patch import apply_xmpp_patch
-#apply_xmpp_patch()
+from src.patch import apply_xmpp_patch
+apply_xmpp_patch()
 
 # Configuração do Servidor XMPP
 XMPP_SERVER = os.getenv("XMPP_SERVER", "127.0.0.1")
@@ -159,6 +159,10 @@ ALLOW_EMERGENCY_CALL_OUTSIDE_SHIFT = True
 SHIFT_DURATION_HOURS = 8
 SHIFT_DURATION_SECONDS = SHIFT_DURATION_HOURS * SIM_HOUR_SECONDS
 
+# Janela permitida para consultas de rotina
+ROUTINE_START_H = 8
+ROUTINE_END_H = 20
+
 # Duração em horas simuladas por tipo de procedimento
 # Valores fracionados para sincronizar com o tempo real (1 hora simulada = 10s)
 PROCEDURE_HOURS = {
@@ -172,7 +176,9 @@ PROCEDURE_HOURS = {
 
 # Valores da Simulação
 SIMULATION_WEEKS = 1
-SIMULATION_DURATION = SIMULATION_WEEKS * SIM_WEEK_SECONDS
+# Duração real da demonstração. Por defeito fica em 3 minutos para a defesa;
+# se for preciso correr uma semana simulada completa, definir SIMULATION_DURATION=1680 no ambiente.
+SIMULATION_DURATION = int(os.getenv("SIMULATION_DURATION", "180"))
 ARRIVAL_RATE_NORMAL = 0.3  # reduzido para a capacidade do hospital
 ARRIVAL_RATE_URGENT = 0.05 # reduzido para a capacidade do hospital
 
@@ -193,11 +199,26 @@ TRIAGE_CONTRACT_NET_RESPONSE_WAIT_SECONDS = 1
 TRIAGE_CONTRACT_NET_PROPOSAL_TIMEOUT_SECONDS = 2
 INTERNMENT_CONTRACT_NET_RESPONSE_WAIT_SECONDS = 1
 INTERNMENT_CONTRACT_NET_PROPOSAL_TIMEOUT_SECONDS = 2
+INTERNMENT_RETRY_BASE_SECONDS = 5
+INTERNMENT_RETRY_MAX_SECONDS = 30
+INTERNMENT_MAX_RETRIES = 6
+
+EXAM_RETRY_BASE_SECONDS = 3
+EXAM_RETRY_MAX_SECONDS = 20
+EXAM_MAX_RETRIES = 5
+
+SURGERY_RETRY_BASE_SECONDS = 4
+SURGERY_RETRY_MAX_SECONDS = 30
+SURGERY_MAX_RETRIES = 5
+
 PREEMPTION_CONFIRM_WAIT_SECONDS = 2
 
 CONSULTATION_DURATION_NORMAL_SECONDS = 3
 CONSULTATION_DURATION_URGENT_SECONDS = 2
-EXAM_RESULTS_WAIT_SECONDS = 2
+EXAM_RESULTS_WAIT_SECONDS = 2  # mantido por compatibilidade; o fluxo agora espera por exam_result real
+PROCEDURE_RESULT_TIMEOUT_SECONDS = 15  # mantido por compatibilidade
+EXAM_RESULT_TIMEOUT_SECONDS = 60
+SURGERY_RESULT_TIMEOUT_SECONDS = 90
 SURGERY_DURATION_SECONDS = 6
 EXAM_DURATION_SECONDS = 3
 TRIAGE_CLASSIFICATION_SECONDS = 1

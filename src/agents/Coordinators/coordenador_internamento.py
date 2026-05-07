@@ -1,6 +1,7 @@
 import asyncio
 import json
 import random
+import time
 
 from spade.agent import Agent
 from spade.behaviour import CyclicBehaviour
@@ -10,7 +11,7 @@ from src.config import *
 
 
 class CoordenadorInternamento(Agent):
-    """Coordinates inpatient admission with waiting queue when full."""
+    """Coordena internamento com fila, backoff, limite de tentativas e waitlist no dashboard."""
 
     def __init__(self, agent_jid, password, hospital_config=None, **kwargs):
         super().__init__(agent_jid, password, **kwargs)
@@ -23,17 +24,58 @@ class CoordenadorInternamento(Agent):
         self.pending_internments = []
         self.pending_internment_patient_ids = set()
 
+    def get_ready_internment_index(self):
+        now = time.monotonic()
+        for idx, request in enumerate(self.pending_internments):
+            if float(request.get("_next_retry_at", 0.0)) <= now:
+                return idx
+        return None
+
+    def schedule_internment_retry(self, data):
+        """Aplica backoff exponencial para não repetir CFPs de internamento em ciclo apertado."""
+        retries = int(data.get("_retry_count", 0)) + 1
+        data["_retry_count"] = retries
+        if retries >= INTERNMENT_MAX_RETRIES:
+            return None, retries, True
+        delay = min(
+            INTERNMENT_RETRY_BASE_SECONDS * (2 ** (retries - 1)),
+            INTERNMENT_RETRY_MAX_SECONDS,
+        )
+        data["_next_retry_at"] = time.monotonic() + delay
+        return delay, retries, False
+
     def enqueue_internment(self, data):
         doente_jid = data.get("doente_jid")
         if not doente_jid:
             return False
         if doente_jid in self.pending_internment_patient_ids:
             return False
+        data.setdefault("_retry_count", 0)
+        data.setdefault("_next_retry_at", 0.0)
         self.pending_internments.append(data)
         self.pending_internment_patient_ids.add(doente_jid)
         return True
 
     class InternamentoBehaviour(CyclicBehaviour):
+        async def handle_out_of_band_message(self, msg):
+            performative = msg.get_metadata("performative")
+            msg_type = msg.get_metadata("type")
+            if performative == "request" and msg_type == "internment_request":
+                extra = json.loads(msg.body)
+                if self.agent.enqueue_internment(extra):
+                    await self.publish_waitlist()
+                    log(self.agent._coord_name,
+                        f"[INTERNAMENTO] Pedido enfileirado fora de banda: {extra.get('nome', '?')}",
+                        "YELLOW")
+            elif performative == "inform" and msg_type == "internment_finished":
+                data = json.loads(msg.body)
+                log(self.agent._coord_name,
+                    f"[INTERNAMENTO] Alta concluída fora de banda para {data.get('nome', '?')}",
+                    "GREEN")
+                await self.dispatch_internment_batch()
+            else:
+                return
+
         async def run(self):
             msg = await self.receive(timeout=COORDINATOR_RECEIVE_TIMEOUT_SECONDS)
             if msg is None:
@@ -60,6 +102,8 @@ class CoordenadorInternamento(Agent):
                 log(self.agent._coord_name,
                     f"[INTERNAMENTO] Alta concluida para {data.get('nome', '?')}", "GREEN")
                 await self.dispatch_internment_batch()
+            else:
+                await self.handle_out_of_band_message(msg)
 
         async def publish_waitlist(self):
             msg = Message(to=self.agent._supervisor)
@@ -72,31 +116,96 @@ class CoordenadorInternamento(Agent):
                         "doente_jid": p.get("doente_jid"),
                         "nome": p.get("nome", "?"),
                         "tipo": "Internamento",
+                        "retry_count": p.get("_retry_count", 0),
+                        "next_retry_at": p.get("_next_retry_at", 0.0),
                     }
                     for p in self.agent.pending_internments
                 ],
             })
             await self.send(msg)
 
+        async def notify_internment_failure(self, patient_data, reason):
+            doente_jid = patient_data.get("doente_jid")
+            nome = patient_data.get("nome", "?")
+            solicitante = patient_data.get("solicitante")
+
+            if solicitante:
+                notif = Message(to=solicitante)
+                notif.set_metadata("performative", "inform")
+                notif.set_metadata("type", "internment_failed")
+                notif.body = json.dumps({
+                    "doente_jid": doente_jid,
+                    "nome": nome,
+                    "motivo": reason,
+                    "procedure": "internment",
+                })
+                notif.thread = doente_jid
+                await self.send(notif)
+
+            if doente_jid:
+                discharge = Message(to=doente_jid)
+                discharge.set_metadata("performative", "inform")
+                discharge.set_metadata("type", "discharge")
+                discharge.body = json.dumps({"estado": "Alta/observacao por internamento indisponivel"})
+                discharge.thread = doente_jid
+                await self.send(discharge)
+
+            log(self.agent._coord_name,
+                f"[INTERNAMENTO-FALHADO] {nome}: {reason}. Doente/solicitante notificados.",
+                "RED")
+
         async def dispatch_next_internment(self):
-            if not self.agent.pending_internments:
+            idx = self.agent.get_ready_internment_index()
+            if idx is None:
                 return False
-            patient = self.agent.pending_internments[0]
+
+            patient = self.agent.pending_internments[idx]
             allocated = await self.run_internment_contract_net(patient)
             if allocated:
-                removed = self.agent.pending_internments.pop(0)
+                removed = self.agent.pending_internments.pop(idx)
                 self.agent.pending_internment_patient_ids.discard(removed.get("doente_jid"))
                 await self.publish_waitlist()
                 return True
+
+            delay, retries, failed = self.agent.schedule_internment_retry(patient)
+            if failed:
+                removed = self.agent.pending_internments.pop(idx)
+                self.agent.pending_internment_patient_ids.discard(removed.get("doente_jid"))
+                await self.notify_internment_failure(
+                    removed,
+                    f"sem quarto/enfermeiro disponível após {INTERNMENT_MAX_RETRIES} tentativas",
+                )
+                await self.publish_waitlist()
+                return True
+
+            await self.publish_waitlist()
+            log(self.agent._coord_name,
+                f"[INTERNAMENTO] Re-tentativa para {patient.get('nome', '?')} adiada {delay:.0f}s "
+                f"(tentativa={retries}/{INTERNMENT_MAX_RETRIES}).",
+                "YELLOW")
             return False
 
         async def dispatch_internment_batch(self, max_dispatches=DISPATCH_BATCH_LIMIT):
             dispatched = 0
             while dispatched < max_dispatches and self.agent.pending_internments:
-                allocated = await self.dispatch_next_internment()
-                if not allocated:
+                progressed = await self.dispatch_next_internment()
+                if not progressed:
                     break
                 dispatched += 1
+
+        async def reject_unselected(self, propostas, selected_jid, jid_key, thread, motivo):
+            for proposta in propostas:
+                target = proposta.get(jid_key)
+                if not target or target == selected_jid:
+                    continue
+                rej = Message(to=target)
+                rej.set_metadata("performative", "reject-proposal")
+                rej.body = json.dumps({"motivo": motivo})
+                rej.thread = thread
+                await self.send(rej)
+
+        async def reject_all(self, propostas, jid_key, thread, motivo):
+            await self.reject_unselected(propostas, None, jid_key, thread, motivo)
 
         async def run_internment_contract_net(self, patient_data):
             agent = self.agent
@@ -112,7 +221,7 @@ class CoordenadorInternamento(Agent):
                 cfp.thread = doente_jid
                 await self.send(cfp)
 
-            room_proposal = None
+            room_propostas = []
             loop = asyncio.get_running_loop()
             deadline = loop.time() + INTERNMENT_CONTRACT_NET_RESPONSE_WAIT_SECONDS
             expected_replies = len(agent._internamento)
@@ -126,26 +235,27 @@ class CoordenadorInternamento(Agent):
                 if reply is None:
                     break
                 if reply.thread != doente_jid:
-                    if (reply.get_metadata("performative") == "request"
-                            and reply.get_metadata("type") == "internment_request"):
-                        extra = json.loads(reply.body)
-                        if agent.enqueue_internment(extra):
-                            await self.publish_waitlist()
+                    await self.handle_out_of_band_message(reply)
                     continue
                 received_replies += 1
                 perf = reply.get_metadata("performative")
-                body = json.loads(reply.body)
+                try:
+                    body = json.loads(reply.body) if reply.body else {}
+                except Exception:
+                    body = {}
                 if perf == "propose" and "sala_jid" in body:
-                    room_proposal = body
+                    room_propostas.append(body)
                     log(agent._coord_name,
-                        f"[CONTRACT-NET] Quarto encontrado para {nome}: {body.get('nome_sala', '?')}.", "YELLOW")
-                    # Removemos o break para ler todas as respostas e limpar a mailbox!
+                        f"[CONTRACT-NET] Quarto candidato para {nome}: {body.get('nome_sala', '?')} "
+                        f"(score={body.get('score', 999)}).", "YELLOW")
 
+            room_proposal = min(room_propostas, key=lambda p: p.get("score", 999)) if room_propostas else None
             if not room_proposal:
                 log(agent._coord_name, f"[INTERNAMENTO] Sem quartos disponíveis para {nome}; mantido em fila.", "RED")
                 return False
 
             # ── Phase 2: CFP to all nurses ──
+            nurse_propostas = []
             nurse_proposal = None
             if agent._enfermeiros:
                 for nurse_jid in agent._enfermeiros:
@@ -167,18 +277,23 @@ class CoordenadorInternamento(Agent):
                     if reply is None:
                         break
                     if reply.thread != doente_jid + "_nurse":
+                        await self.handle_out_of_band_message(reply)
                         continue
                     received_n += 1
                     perf = reply.get_metadata("performative")
-                    body = json.loads(reply.body)
+                    try:
+                        body = json.loads(reply.body) if reply.body else {}
+                    except Exception:
+                        body = {}
                     if perf == "propose" and "enfermeiro_jid" in body:
-                        nurse_proposal = body
+                        nurse_propostas.append(body)
                         log(agent._coord_name,
-                            f"[CONTRACT-NET] Enfermeiro/a encontrado/a para {nome}: "
-                            f"{body.get('nome_enfermeiro', '?')}.", "YELLOW")
-                        # Sem break para ler todos e limpar a mailbox
+                            f"[CONTRACT-NET] Enfermeiro/a candidato/a para {nome}: "
+                            f"{body.get('nome_enfermeiro', '?')} (score={body.get('score', 999)}).", "YELLOW")
 
+                nurse_proposal = min(nurse_propostas, key=lambda p: p.get("score", 999)) if nurse_propostas else None
                 if not nurse_proposal:
+                    await self.reject_all(room_propostas, "sala_jid", doente_jid, "Sem enfermeiro disponível")
                     log(agent._coord_name,
                         f"[INTERNAMENTO] Sem enfermeiros disponíveis para {nome}; mantido em fila.", "RED")
                     return False
@@ -191,6 +306,7 @@ class CoordenadorInternamento(Agent):
             acc_room.body = json.dumps({"doente_jid": doente_jid, "nome": nome, "tipo": "Internamento"})
             acc_room.thread = doente_jid
             await self.send(acc_room)
+            await self.reject_unselected(room_propostas, room_proposal["sala_jid"], "sala_jid", doente_jid, "Proposta não selecionada")
 
             nurse_name = "?"
             if nurse_proposal:
@@ -205,8 +321,8 @@ class CoordenadorInternamento(Agent):
                 })
                 acc_nurse.thread = doente_jid + "_nurse"
                 await self.send(acc_nurse)
+                await self.reject_unselected(nurse_propostas, nurse_proposal["enfermeiro_jid"], "enfermeiro_jid", doente_jid + "_nurse", "Proposta não selecionada")
 
-            # Notify requesting doctor (freed immediately)
             solicitante = patient_data.get("solicitante")
             if solicitante:
                 notif = Message(to=solicitante)
@@ -219,6 +335,7 @@ class CoordenadorInternamento(Agent):
                     "duration": duration,
                     "procedure": "internment",
                 })
+                notif.thread = doente_jid
                 await self.send(notif)
 
             log(agent._coord_name,

@@ -10,7 +10,8 @@ from src.config import (
     RESOURCE_RECEIVE_TIMEOUT_SECONDS,
     WEEKLY_MAX_HOURS, PROCEDURE_HOURS,
     INTERNAMENTO_MIN_SECONDS,
-    SIM_DAY_SECONDS, SIM_WEEK_SECONDS, SHIFT_DURATION_SECONDS,
+    SIM_DAY_SECONDS, SIM_WEEK_SECONDS,
+    SIM_HOUR_SECONDS,
     AGENT_REGISTRY,
     H1_CONFIG, log,
 )
@@ -34,14 +35,38 @@ class AgenteEnfermeiro(ResourceAgent):
         self.role = "nurse"
         self.max_weekly_hours = WEEKLY_MAX_HOURS
         self.weekly_hours_used = 0.0
-        self._sim_start_time = time.time()
+        # Arranque alinhado por defeito com 08h00 simuladas, para evitar a oscilação inicial
+        # dos turnos antes de o main_sim sincronizar os relógios globais.
+        self._sim_start_time = time.time() - (8 * SIM_HOUR_SECONDS)
         profile = AGENT_REGISTRY.get(str(agent_jid), {})
         self._shift_type = profile.get("shift", "morning")
-        self.on_shift = (self._shift_type == "morning")
+        self.on_shift = self.compute_shift_state()
         self.current_assignment_type = None
 
     def get_resource_name(self):
         return self.nome_enfermeiro
+
+    def compute_shift_state(self) -> bool:
+        """Calcula se o enfermeiro deve estar em turno no instante simulado atual."""
+        elapsed = time.time() - self._sim_start_time
+        dia_simulado_s = elapsed % SIM_DAY_SECONDS
+        if self._shift_type == "morning":
+            return 8 * SIM_HOUR_SECONDS <= dia_simulado_s < 16 * SIM_HOUR_SECONDS
+        if self._shift_type == "afternoon":
+            return 16 * SIM_HOUR_SECONDS <= dia_simulado_s < 24 * SIM_HOUR_SECONDS
+        return 0 <= dia_simulado_s < 8 * SIM_HOUR_SECONDS
+
+    def sync_shift_state(self, log_change: bool = True) -> bool:
+        """Sincroniza imediatamente o estado de turno após ajuste do relógio simulado."""
+        should_be_on_shift = self.compute_shift_state()
+        changed = should_be_on_shift != self.on_shift
+        self.on_shift = should_be_on_shift
+        if changed and log_change:
+            estado = "ENTROU em turno" if should_be_on_shift else "SAIU do turno"
+            log(self.nome_enfermeiro,
+                f"[ESCALA] {self.nome_enfermeiro} {estado} (turno={self._shift_type}).",
+                "YELLOW")
+        return changed
 
     def add_hours(self, procedure_type: str):
         hours = PROCEDURE_HOURS.get(procedure_type, 2)
@@ -81,12 +106,19 @@ class AgenteEnfermeiro(ResourceAgent):
                 "doente_jid": self.data.get("doente_jid"),
                 "nome": nome,
             })
+            done.thread = self.data.get("doente_jid")
             await self.send(done)
 
+            # Notify patient discharge; otherwise patient agents remain alive after internment.
+            msg_discharge = Message(to=self.data.get("doente_jid"))
+            msg_discharge.set_metadata("performative", "inform")
+            msg_discharge.set_metadata("type", "discharge")
+            msg_discharge.body = json.dumps({"estado": "Alta de internamento"})
+            msg_discharge.thread = self.data.get("doente_jid")
+            await self.send(msg_discharge)
+
             # Free the nurse
-            self.agent.disponivel = True
-            self.agent.paciente_atual = None
-            self.agent.current_assignment_type = None
+            self.agent.clear_assignment()
             await self.agent.send_status(self)
 
             log(self.agent.nome_enfermeiro,
@@ -97,22 +129,7 @@ class AgenteEnfermeiro(ResourceAgent):
         """Alterna o turno do enfermeiro."""
         async def run(self):
             agent = self.agent
-            elapsed = time.time() - agent._sim_start_time
-            dia_simulado_s = elapsed % SIM_DAY_SECONDS
-            
-            if agent._shift_type == "morning":
-                should_be_on_shift = (0 <= dia_simulado_s < SHIFT_DURATION_SECONDS)
-            elif agent._shift_type == "afternoon":
-                should_be_on_shift = (SHIFT_DURATION_SECONDS <= dia_simulado_s < 2 * SHIFT_DURATION_SECONDS)
-            else: # night
-                should_be_on_shift = (2 * SHIFT_DURATION_SECONDS <= dia_simulado_s)
-
-            if should_be_on_shift != agent.on_shift:
-                agent.on_shift = should_be_on_shift
-                estado = "ENTROU em turno" if should_be_on_shift else "SAIU do turno"
-                log(agent.nome_enfermeiro,
-                    f"[ESCALA] {agent.nome_enfermeiro} {estado} "
-                    f"(turno={agent._shift_type}).", "YELLOW")
+            if agent.sync_shift_state(log_change=True):
                 await agent.send_status(self)
 
     class WeeklyResetBehaviour(PeriodicBehaviour):
@@ -151,6 +168,7 @@ class AgenteEnfermeiro(ResourceAgent):
                         "max_weekly_hours": agent.max_weekly_hours,
                         "on_shift": agent.on_shift,
                         "slot": "next_available",
+                        "score": agent.weekly_hours_used,
                     })
                     log(agent.nome_enfermeiro,
                         f"[PROPOSAL] Proposta de internamento emitida para {data.get('nome', '?')}.", "YELLOW")
@@ -181,6 +199,24 @@ class AgenteEnfermeiro(ResourceAgent):
                     f"[INTERNAMENTO] {data.get('nome', '?')} admitido/a. "
                     f"A iniciar vigilância de enfermagem.", "YELLOW")
                 agent.add_behaviour(agent.ManageInternmentBehaviour(data))
+
+            elif performative == "reject-proposal":
+                log(agent.nome_enfermeiro,
+                    "[CONTRACT-NET] Proposta rejeitada pelo coordenador; enfermeiro/a mantém-se livre.",
+                    "YELLOW")
+
+            elif performative == "cancel":
+                prev = agent.paciente_atual
+                agent.clear_assignment()
+                log(agent.nome_enfermeiro,
+                    f"[CANCEL] Internamento cancelado/libertado (doente anterior: {prev}).",
+                    "RED")
+                await agent.send_status(self)
+
+            else:
+                log(agent.nome_enfermeiro,
+                    f"[IGNORADO] Mensagem sem handler explícito: performative={performative}, type={msg.get_metadata('type')}",
+                    "YELLOW")
 
     async def setup(self):
         turno_inicial = "em turno" if self.on_shift else "fora de turno"
