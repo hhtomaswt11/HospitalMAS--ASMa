@@ -45,11 +45,17 @@ class AgenteSala(ResourceAgent):
                 # and paciente_atual set). Update the assignment type to active and
                 # emit status so dashboards reflect the start time.
                 self.agent.agenda.pop(expected_doente, None)
-                self.agent.current_assignment_type = "consultation"
+                if "exam_start_at" in self.patient_data:
+                    self.agent.current_assignment_type = "exam"
+                elif "surgery_start_at" in self.patient_data:
+                    self.agent.current_assignment_type = "surgery"
+                else:
+                    self.agent.current_assignment_type = "consultation"
+                
                 self.agent.disponivel = False
                 self.agent.paciente_atual = expected_doente
                 log(self.agent.nome_sala,
-                    f"[AGENDA] Consultório reservado iniciou atendimento para {self.patient_data.get('nome', '?')}.",
+                    f"[AGENDA] Sala reservada iniciou atendimento para {self.patient_data.get('nome', '?')}.",
                     "BLUE")
                 await self.agent.send_status(self)
 
@@ -67,7 +73,7 @@ class AgenteSala(ResourceAgent):
                 log(agent.nome_sala, f"[CFP] Call for Proposal received for patient {data.get('nome', '?')}", "MAGENTA")
 
                 reply = msg.make_reply()
-                if cfp_type == "consultation_cfp":
+                if cfp_type in ["consultation_cfp", "exam_cfp", "surgery_cfp"]:
                     slot_at = max(time.time(), agent.next_routine_slot_at)
                     reply.set_metadata("performative", "propose")
                     reply.body = json.dumps({
@@ -77,7 +83,7 @@ class AgenteSala(ResourceAgent):
                         "slot_at": slot_at,
                         "score": max(0.0, slot_at - time.time()),
                     })
-                    log(agent.nome_sala, "[PROPOSAL] Proposal emitted (slot routine).", "MAGENTA")
+                    log(agent.nome_sala, f"[PROPOSAL] Proposal emitted (slot {cfp_type}).", "MAGENTA")
                 elif agent.disponivel:
                     reply.set_metadata("performative", "propose")
                     reply.body = json.dumps({
@@ -98,12 +104,15 @@ class AgenteSala(ResourceAgent):
 
             elif performative == "accept-proposal":
                 data = json.loads(msg.body)
-                if msg.get_metadata("type") == "consultation_schedule":
-                    start_at = float(data.get("consultation_start_at", time.time()))
+                if "consultation_start_at" in data or "exam_start_at" in data or "surgery_start_at" in data:
+                    start_at_key = "consultation_start_at" if "consultation_start_at" in data else "exam_start_at" if "exam_start_at" in data else "surgery_start_at"
+                    duration = CONSULTATION_SLOT_SECONDS if start_at_key == "consultation_start_at" else EXAM_DURATION_SECONDS if start_at_key == "exam_start_at" else data.get("surgery_duration_seconds", SURGERY_DURATION_SECONDS)
+                    
+                    start_at = float(data.get(start_at_key, time.time()))
                     slot_ref = max(start_at, agent.next_routine_slot_at)
-                    agent.next_routine_slot_at = slot_ref + CONSULTATION_SLOT_SECONDS
+                    agent.next_routine_slot_at = slot_ref + duration
                     log(agent.nome_sala,
-                        f"[AGENDA] Slot de consultório marcado para {data.get('nome', '?')} em {max(0.0, start_at - time.time()):.1f}s.",
+                        f"[AGENDA] Slot marcado para {data.get('nome', '?')} em {max(0.0, start_at - time.time()):.1f}s.",
                         "BLUE")
                     
                     # Add to agenda instead of overwriting active state immediately
@@ -111,7 +120,7 @@ class AgenteSala(ResourceAgent):
 
                     # If available, show next patient on dashboard
                     if agent.disponivel:
-                        agent.current_assignment_type = "consultation_reserved"
+                        agent.current_assignment_type = "reserved"
                         agent.paciente_atual = data.get("doente_jid")
                         await self.agent.send_status(self)
                     

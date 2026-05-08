@@ -247,13 +247,39 @@ class CoordenadorExames(Agent):
                     elif "medico_jid" in body:
                         medico_propostas.append(body)
 
-            equipamento_proposta = min(equipamento_propostas, key=lambda p: p.get("score", 999)) if equipamento_propostas else None
-            medico_proposta = min(medico_propostas, key=lambda p: p.get("score", 999)) if medico_propostas else None
+            now = time.time()
+            equipamento_proposta = None
+            medico_proposta = None
+            exam_start_at = now
+
+            if equipamento_propostas and medico_propostas:
+                def _slot_at(proposta):
+                    slot = proposta.get("slot_at")
+                    try:
+                        return float(slot)
+                    except Exception:
+                        return now
+
+                best = None
+                for m_prop in medico_propostas:
+                    for eq_prop in equipamento_propostas:
+                        start_at = max(_slot_at(m_prop), _slot_at(eq_prop))
+                        combined_score = m_prop.get("score", 999) + eq_prop.get("score", 999)
+                        key = (start_at, combined_score)
+                        if best is None or key < best[0]:
+                            best = (key, m_prop, eq_prop, start_at)
+
+                if best:
+                    _, medico_proposta, equipamento_proposta, exam_start_at = best
 
             if equipamento_proposta and medico_proposta:
                 acc_eq = Message(to=equipamento_proposta["sala_jid"])
                 acc_eq.set_metadata("performative", "accept-proposal")
-                acc_eq.body = json.dumps({"doente_jid": doente_jid, "nome": nome})
+                acc_eq.body = json.dumps({
+                    "doente_jid": doente_jid,
+                    "nome": nome,
+                    "exam_start_at": exam_start_at
+                })
                 acc_eq.thread = doente_jid
                 await self.send(acc_eq)
 
@@ -266,6 +292,7 @@ class CoordenadorExames(Agent):
                     "especialidade": exam_specialty,
                     "solicitante": patient_data.get("solicitante"),
                     "tipo_original": patient_data.get("tipo_original", patient_data.get("tipo")),
+                    "exam_start_at": exam_start_at
                 })
                 acc_med.thread = doente_jid
                 await self.send(acc_med)
@@ -276,7 +303,8 @@ class CoordenadorExames(Agent):
                 log(agent._coord_name,
                     f"[ALOCAÇÃO] DIAGNÓSTICO AGENDADO: {nome} → "
                     f"Equipamento={equipamento_proposta.get('nome_sala', '?')}, "
-                    f"Médico={medico_proposta.get('nome_medico', '?')}", "BOLD")
+                    f"Médico={medico_proposta.get('nome_medico', '?')}, "
+                    f"slot_at={exam_start_at:.3f}s", "BOLD")
 
                 solicitante = patient_data.get("solicitante")
                 if solicitante:
@@ -288,7 +316,8 @@ class CoordenadorExames(Agent):
                         "sala_jid": equipamento_proposta["sala_jid"],
                         "medico_jid": medico_proposta["medico_jid"],
                         "especialidade": exam_specialty,
-                        "procedure": "exam"
+                        "procedure": "exam",
+                        "exam_start_at": exam_start_at
                     })
                     notif.thread = doente_jid
                     await self.send(notif)

@@ -940,18 +940,21 @@
                 if (info && info.hospital == hospitalId) filteredRooms[jid] = info;
             });
 
+            const currentHour = data.sim_time ? data.sim_time.hour : 0;
+            let currentShift = 'night';
+            if (currentHour >= 8 && currentHour < 16) currentShift = 'morning';
+            else if (currentHour >= 16) currentShift = 'afternoon';
+
             Object.keys(ENTITIES.medics).forEach(jid => {
                 const info = ENTITIES.medics[jid];
-                if (info && info.hospital == hospitalId) {
-                    // Show all medics for this hospital regardless of shift state
+                if (info && info.hospital == hospitalId && info.shift === currentShift) {
                     filteredMedics[jid] = info;
                 }
             });
 
             Object.keys(ENTITIES.nurses || {}).forEach(jid => {
                 const info = ENTITIES.nurses[jid];
-                if (info && info.hospital == hospitalId) {
-                    // Show all nurses for this hospital regardless of shift state
+                if (info && info.hospital == hospitalId && info.shift === currentShift) {
                     filteredNurses[jid] = info;
                 }
             });

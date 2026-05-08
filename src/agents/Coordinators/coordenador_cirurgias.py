@@ -224,13 +224,46 @@ class CoordenadorCirurgias(Agent):
                     elif "medico_jid" in body:
                         medico_propostas.append(body)
 
-            bloco_proposta = min(bloco_propostas, key=lambda p: p.get("score", 999)) if bloco_propostas else None
-            medico_proposta = min(medico_propostas, key=lambda p: p.get("score", 999)) if medico_propostas else None
+            now = time.time()
+            bloco_proposta = None
+            medico_proposta = None
+            surgery_start_at = now
+
+            if bloco_propostas and medico_propostas:
+                def _slot_at(proposta):
+                    slot = proposta.get("slot_at")
+                    try:
+                        return float(slot)
+                    except Exception:
+                        return now
+
+                best = None
+                for m_prop in medico_propostas:
+                    for b_prop in bloco_propostas:
+                        start_at = max(_slot_at(m_prop), _slot_at(b_prop))
+                        combined_score = m_prop.get("score", 999) + b_prop.get("score", 999)
+                        key = (start_at, combined_score)
+                        if best is None or key < best[0]:
+                            best = (key, m_prop, b_prop, start_at)
+
+                if best:
+                    _, medico_proposta, bloco_proposta, surgery_start_at = best
 
             if bloco_proposta and medico_proposta:
+                import random
+                from src.config import SIM_HOUR_SECONDS
+                duration_hr = float(random.choice([1, 2, 3]))
+                duration_sec = duration_hr * SIM_HOUR_SECONDS
+
                 acc_b = Message(to=bloco_proposta["sala_jid"])
                 acc_b.set_metadata("performative", "accept-proposal")
-                acc_b.body = json.dumps({"doente_jid": doente_jid, "nome": nome})
+                acc_b.body = json.dumps({
+                    "doente_jid": doente_jid,
+                    "nome": nome,
+                    "surgery_start_at": surgery_start_at,
+                    "surgery_duration_hours": duration_hr,
+                    "surgery_duration_seconds": duration_sec
+                })
                 acc_b.thread = doente_jid
                 await self.send(acc_b)
 
@@ -242,8 +275,12 @@ class CoordenadorCirurgias(Agent):
                     "sala_jid": bloco_proposta["sala_jid"],
                     "solicitante": patient_data.get("solicitante"),
                     "tipo_original": patient_data.get("tipo_original", patient_data.get("tipo")),
+                    "surgery_start_at": surgery_start_at,
+                    "surgery_duration_hours": duration_hr,
+                    "surgery_duration_seconds": duration_sec
                 })
                 acc_m.thread = doente_jid
+
                 await self.send(acc_m)
 
                 await self.reject_unselected(bloco_propostas, bloco_proposta["sala_jid"], "sala_jid", doente_jid, "Proposta não selecionada")
@@ -252,7 +289,8 @@ class CoordenadorCirurgias(Agent):
                 log(agent._coord_name,
                     f"[ALOCAÇÃO] CIRURGIA AGENDADA: {nome} → "
                     f"Bloco={bloco_proposta.get('nome_sala', '?')}, "
-                    f"Cirurgião={medico_proposta.get('nome_medico', '?')}", "BOLD")
+                    f"Cirurgião={medico_proposta.get('nome_medico', '?')}, "
+                    f"slot_at={surgery_start_at:.3f}s", "BOLD")
 
                 solicitante = patient_data.get("solicitante")
                 if solicitante:
@@ -262,7 +300,8 @@ class CoordenadorCirurgias(Agent):
                     notif.body = json.dumps({
                         "doente_jid": doente_jid,
                         "sala_jid": bloco_proposta["sala_jid"],
-                        "procedure": "surgery"
+                        "procedure": "surgery",
+                        "surgery_start_at": surgery_start_at
                     })
                     notif.thread = doente_jid
                     await self.send(notif)

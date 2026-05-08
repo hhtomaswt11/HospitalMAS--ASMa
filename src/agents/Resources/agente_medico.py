@@ -75,13 +75,14 @@ class AgenteMedico(ResourceAgent):
                 "YELLOW")
         return changed
 
-    def add_hours(self, procedure_type: str):
+    def add_hours(self, procedure_type: str, hours: float = None):
         """Accumulate simulated weekly hours for a procedure."""
-        hours = PROCEDURE_HOURS.get(procedure_type, 1)
+        if hours is None:
+            hours = PROCEDURE_HOURS.get(procedure_type, 1)
         self.weekly_hours_used += hours
         log(self.nome_medico,
-            f"[HORAS] {self.nome_medico} acumulou {self.weekly_hours_used:.0f}/{self.max_weekly_hours}h semanais "
-            f"(+{hours}h por {procedure_type}).", "YELLOW")
+            f"[HORAS] {self.nome_medico} acumulou {self.weekly_hours_used:.2f}/{self.max_weekly_hours}h semanais "
+            f"(+{hours:.2f}h por {procedure_type}).", "YELLOW")
 
     def is_available_for_cfp(self, cfp_type, patient_data) -> bool:
         """Return True if the doctor can accept this CFP considering schedule/hours."""
@@ -149,19 +150,24 @@ class AgenteMedico(ResourceAgent):
 
     def build_proposal_body(self, cfp_type=None) -> dict:
         slot_at = time.time()
-        if cfp_type == "consultation_cfp":
+        if cfp_type in ["consultation_cfp", "exam_cfp", "surgery_cfp"]:
             slot_at = max(slot_at, self.next_routine_slot_at)
 
+        profile = self.get_profile()
+        is_nurse = profile.get("role") == "nurse"
+        
         return {
             "medico_jid": str(self.jid),
             "nome_medico": self.nome_medico,
+            "enfermeiro_jid": str(self.jid) if is_nurse else None,
+            "nome_enfermeiro": self.nome_medico if is_nurse else None,
             "slot": "next_available",
             "slot_at": slot_at,
             "weekly_hours_used": self.weekly_hours_used,
             "max_weekly_hours": self.max_weekly_hours,
             "on_shift": self.on_shift,
             "emergency_callable": self.emergency_callable,
-            "score": self._compute_score() + (max(0.0, slot_at - time.time()) if cfp_type == "consultation_cfp" else 0.0),
+            "score": self._compute_score() + (max(0.0, slot_at - time.time()) if cfp_type in ["consultation_cfp", "exam_cfp", "surgery_cfp"] else 0.0),
         }
 
     def _compute_score(self) -> float:
@@ -184,11 +190,21 @@ class AgenteMedico(ResourceAgent):
             return zone == "normal" and specialty == requested_specialty and self._consult_mode == "routine"
             
         if cfp_type == "emergency_cfp":
-            return zone == "normal" and specialty == requested_specialty and self._consult_mode == "emergency"
+            if zone == "normal" and specialty == requested_specialty:
+                if self._consult_mode == "emergency":
+                    return True
+                if self._consult_mode == "routine":
+                    elapsed = time.time() - self._sim_start_time
+                    current_hour = (elapsed % SIM_DAY_SECONDS) / SIM_HOUR_SECONDS
+                    if current_hour >= ROUTINE_END_H or current_hour < ROUTINE_START_H:
+                        return True
+            return False
         if cfp_type == "surgery_cfp":
-            return zone == "surgical" and specialty == SPECIALTY_CIRURGIA
+            return zone == "surgery" and specialty == SPECIALTY_CIRURGIA
         if cfp_type == "exam_cfp":
             return zone == "exam" and specialty == requested_specialty
+        if cfp_type == "internment_cfp":
+            return profile.get("role") == "nurse"
         return False
 
     def choose_exam_specialty(self):
@@ -421,7 +437,8 @@ class AgenteMedico(ResourceAgent):
             nome = self.patient_data.get("nome", "?")
             doente_jid = self.patient_data.get("doente_jid")
             bloco = self.agent.bloco_atual or self.patient_data.get("sala_jid")
-            await asyncio.sleep(SURGERY_DURATION_SECONDS)
+            duration_sec = self.patient_data.get("surgery_duration_seconds", SURGERY_DURATION_SECONDS)
+            await asyncio.sleep(duration_sec)
             log(self.agent.nome_medico,
                 f"[CIRURGIA] Procedimento cirúrgico a {nome} concluído. Doente transferido para o recobro.",
                 "GREEN")
@@ -580,6 +597,79 @@ class AgenteMedico(ResourceAgent):
                 "GREEN")
             self.agent.add_behaviour(self.agent.EvaluatePatientBehaviour(self.patient_data))
 
+    class ScheduledExamBehaviour(OneShotBehaviour):
+        def __init__(self, patient_data, start_at):
+            super().__init__()
+            self.patient_data = patient_data
+            self.start_at = start_at
+
+        async def run(self):
+            delay = max(0.0, self.start_at - time.time())
+            if delay > 0:
+                await asyncio.sleep(delay)
+
+            expected_doente = self.patient_data.get("doente_jid")
+            if expected_doente not in self.agent.agenda:
+                log(self.agent.nome_medico,
+                    f"[AGENDA-IGNORED] Reserva não encontrada na agenda ou cancelada para {self.patient_data.get('nome','?')}; salto do início de exame.",
+                    "YELLOW")
+                return
+
+            while not self.agent.disponivel:
+                await asyncio.sleep(0.2)
+
+            self.agent.agenda.pop(expected_doente, None)
+            self.agent.disponivel = False
+            self.agent.paciente_atual = expected_doente
+            self.agent.sala_atual = self.patient_data.get("sala_jid")
+            self.agent.current_assignment_type = "exam"
+            self.agent.add_hours("exam")
+            await self.agent.send_status(self)
+
+            nome = self.patient_data.get("nome", "?")
+            log(self.agent.nome_medico,
+                f"[AGENDA] Início do exame agendado para {nome}.",
+                "CYAN")
+            self.agent.add_behaviour(self.agent.ExecuteExamBehaviour(self.patient_data))
+
+    class ScheduledSurgeryBehaviour(OneShotBehaviour):
+        def __init__(self, patient_data, start_at):
+            super().__init__()
+            self.patient_data = patient_data
+            self.start_at = start_at
+
+        async def run(self):
+            delay = max(0.0, self.start_at - time.time())
+            if delay > 0:
+                await asyncio.sleep(delay)
+
+            expected_doente = self.patient_data.get("doente_jid")
+            if expected_doente not in self.agent.agenda:
+                log(self.agent.nome_medico,
+                    f"[AGENDA-IGNORED] Reserva não encontrada na agenda ou cancelada para {self.patient_data.get('nome','?')}; salto do início de cirurgia.",
+                    "YELLOW")
+                return
+
+            while not self.agent.disponivel:
+                await asyncio.sleep(0.2)
+
+            self.agent.agenda.pop(expected_doente, None)
+            self.agent.disponivel = False
+            self.agent.paciente_atual = expected_doente
+            self.agent.sala_atual = self.patient_data.get("sala_jid")
+            if self.patient_data.get("sala_jid"):
+                self.agent.bloco_atual = self.patient_data.get("sala_jid")
+            self.agent.current_assignment_type = "surgery"
+            duration_hr = self.patient_data.get("surgery_duration_hours")
+            self.agent.add_hours("surgery", duration_hr)
+            await self.agent.send_status(self)
+
+            nome = self.patient_data.get("nome", "?")
+            log(self.agent.nome_medico,
+                f"[AGENDA] Início da cirurgia agendada para {nome}.",
+                "MAGENTA")
+            self.agent.add_behaviour(self.agent.ExecuteProcedureBehaviour(self.patient_data))
+
     class HandleProposalsBehaviour(CyclicBehaviour):
         async def run(self):
             msg = await self.receive(timeout=RESOURCE_RECEIVE_TIMEOUT_SECONDS)
@@ -658,29 +748,35 @@ class AgenteMedico(ResourceAgent):
                         await self.agent.send_status(self)
                         agent.add_behaviour(agent.EvaluatePatientBehaviour(data))
                 elif sender == coord_cir_name:
-                    agent.disponivel = False
-                    agent.paciente_atual = data.get("doente_jid")
-                    agent.sala_atual = data.get("sala_jid")
-                    if data.get("sala_jid"):
-                        agent.bloco_atual = data.get("sala_jid")
-                    agent.current_assignment_type = "surgery"
-                    agent.add_hours("surgery")
+                    start_at = float(data.get("surgery_start_at", time.time()))
+                    duration_sec = float(data.get("surgery_duration_seconds", SURGERY_DURATION_SECONDS))
+                    slot_ref = max(start_at, agent.next_routine_slot_at)
+                    agent.next_routine_slot_at = slot_ref + duration_sec
                     log(agent.nome_medico,
-                        f"[ALLOCATION] Surgical Allocation ACCEPTED for {data.get('nome', '?')}. Initiating procedure.",
+                        f"[AGENDA] Cirurgia agendada para {data.get('nome', '?')} em {max(0.0, start_at - time.time()):.1f}s.",
                         "MAGENTA")
-                    await self.agent.send_status(self)
-                    agent.add_behaviour(agent.ExecuteProcedureBehaviour(data))
+                    agent.agenda[data.get("doente_jid")] = data
+                    if agent.disponivel:
+                        agent.current_assignment_type = "surgery_reserved"
+                        agent.paciente_atual = data.get("doente_jid")
+                        agent.sala_atual = data.get("sala_jid")
+                        await self.agent.send_status(self)
+                    agent.add_behaviour(agent.ScheduledSurgeryBehaviour(data, start_at))
+
                 elif sender == coord_exam_name:
-                    agent.disponivel = False
-                    agent.paciente_atual = data.get("doente_jid")
-                    agent.sala_atual = data.get("sala_jid")
-                    agent.current_assignment_type = "exam"
-                    agent.add_hours("exam")
+                    start_at = float(data.get("exam_start_at", time.time()))
+                    slot_ref = max(start_at, agent.next_routine_slot_at)
+                    agent.next_routine_slot_at = slot_ref + EXAM_DURATION_SECONDS
                     log(agent.nome_medico,
-                        f"[ALLOCATION] Exam Allocation ACCEPTED for {data.get('nome', '?')}. Initiating exam.",
+                        f"[AGENDA] Exame agendado para {data.get('nome', '?')} em {max(0.0, start_at - time.time()):.1f}s.",
                         "CYAN")
-                    await self.agent.send_status(self)
-                    agent.add_behaviour(agent.ExecuteExamBehaviour(data))
+                    agent.agenda[data.get("doente_jid")] = data
+                    if agent.disponivel:
+                        agent.current_assignment_type = "exam_reserved"
+                        agent.paciente_atual = data.get("doente_jid")
+                        agent.sala_atual = data.get("sala_jid")
+                        await self.agent.send_status(self)
+                    agent.add_behaviour(agent.ScheduledExamBehaviour(data, start_at))
                 elif sender == coord_int_name:
                     agent.disponivel = False
                     agent.paciente_atual = data.get("doente_jid")
