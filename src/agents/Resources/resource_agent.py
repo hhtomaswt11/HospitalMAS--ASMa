@@ -46,7 +46,7 @@ class ResourceAgent(Agent):
         }
         # Optional scheduling fields — subclasses set these attributes
         for field in ("role", "weekly_hours_used", "max_weekly_hours",
-                      "on_shift", "current_assignment_type"):
+                      "on_shift", "current_assignment_type", "consult_mode"):
             val = getattr(self, field, None)
             if val is not None:
                 payload[field] = val

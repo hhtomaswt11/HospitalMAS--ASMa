@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from dotenv import load_dotenv
+#from dotenv import load_dotenv
 
 # load_dotenv()
 
@@ -166,7 +166,7 @@ ROUTINE_END_H = 20
 # Duração em horas simuladas por tipo de procedimento
 # Valores fracionados para sincronizar com o tempo real (1 hora simulada = 10s)
 PROCEDURE_HOURS = {
-    "consultation": 0.3,
+    "consultation": 0.25,
     "emergency":    0.2,
     "exam":         0.3,
     "surgery":      0.6,
@@ -178,7 +178,7 @@ PROCEDURE_HOURS = {
 SIMULATION_WEEKS = 1
 # Duração real da demonstração. Por defeito fica em 3 minutos para a defesa;
 # se for preciso correr uma semana simulada completa, definir SIMULATION_DURATION=1680 no ambiente.
-SIMULATION_DURATION = int(os.getenv("SIMULATION_DURATION", "180"))
+SIMULATION_DURATION = 45
 ARRIVAL_RATE_NORMAL = 0.3  # reduzido para a capacidade do hospital
 ARRIVAL_RATE_URGENT = 0.05 # reduzido para a capacidade do hospital
 
@@ -212,6 +212,10 @@ SURGERY_RETRY_MAX_SECONDS = 30
 SURGERY_MAX_RETRIES = 5
 
 PREEMPTION_CONFIRM_WAIT_SECONDS = 2
+
+# Consulta de rotina com agenda por slots (tempo simulado)
+CONSULTATION_SLOT_MINUTES = 15
+CONSULTATION_SLOT_SECONDS = SIM_HOUR_SECONDS * (CONSULTATION_SLOT_MINUTES / 60.0)
 
 CONSULTATION_DURATION_NORMAL_SECONDS = 3
 CONSULTATION_DURATION_URGENT_SECONDS = 2
@@ -267,7 +271,9 @@ def build_hospital_config(
     coord_cons_name, coord_urg_name, coord_exam_name,
     coord_cir_name, coord_tri_name, coord_int_name,
     medicos_names, medicos_triagem_names,
-    salas_names, equipamentos_map, blocos_names,
+    medicos_consultas_routine_names, medicos_consultas_emergency_names,
+    salas_consultas_routine_names, salas_consultas_emergency_names,
+    equipamentos_map, blocos_names,
     salas_triagem_names, internamento_names,
     enfermeiros_names=None,
 ):
@@ -282,7 +288,12 @@ def build_hospital_config(
         "coord_int": jid(coord_int_name),
         "medicos": [jid(m) for m in medicos_names],
         "medicos_triagem": [jid(m) for m in medicos_triagem_names],
-        "salas": [jid(s) for s in salas_names],
+        "medicos_consultas_routine": [jid(m) for m in medicos_consultas_routine_names],
+        "medicos_consultas_emergency": [jid(m) for m in medicos_consultas_emergency_names],
+        "salas_consultas_routine": [jid(s) for s in salas_consultas_routine_names],
+        "salas_consultas_emergency": [jid(s) for s in salas_consultas_emergency_names],
+        # Compat: mantém a chave histórica usada no bootstrap de recursos.
+        "salas": [jid(s) for s in (salas_consultas_routine_names + salas_consultas_emergency_names)],
         # equipamentos_map: list of (jid_name, specialty) tuples
         "equipamentos": [jid(s) for s, _ in equipamentos_map],
         "equipamentos_specialty": {jid(s): sp for s, sp in equipamentos_map},
@@ -303,8 +314,13 @@ H1_CONFIG = build_hospital_config(
                    MEDICO6, MEDICO7, MEDICO8, MEDICO9, MEDICO10,
                    MEDICO11, MEDICO12, MEDICO13, MEDICO14, MEDICO15],
     medicos_triagem_names=[MEDICO_TRIAGEM1, MEDICO_TRIAGEM2],
-    salas_names=[SALA1, SALA2, SALA3, SALA4, SALA5,
-                 SALA6, SALA7, SALA8, SALA9, SALA10],
+    # Pool of doctors eligible for routine consultations (shift gating happens in CFP).
+    # Include both morning and afternoon doctors so the coordinator can find an in-shift match.
+    medicos_consultas_routine_names=[MEDICO1, MEDICO2, MEDICO3, MEDICO8, MEDICO9, MEDICO10],
+    # Pool of doctors eligible for emergency consultations (if needed by other flows).
+    medicos_consultas_emergency_names=[MEDICO4, MEDICO5, MEDICO6, MEDICO11, MEDICO12, MEDICO13],
+    salas_consultas_routine_names=[SALA1, SALA2, SALA3, SALA4, SALA5, SALA6, SALA7],
+    salas_consultas_emergency_names=[SALA8, SALA9, SALA10],
     equipamentos_map=[
         (SALA_RAIOX1, SPECIALTY_RX), (SALA_RAIOX2, SPECIALTY_RX),
         (SALA_TAC1, SPECIALTY_TAC), (SALA_TAC2, SPECIALTY_TAC),
@@ -326,8 +342,12 @@ H2_CONFIG = build_hospital_config(
                    H2_MEDICO6, H2_MEDICO7, H2_MEDICO8, H2_MEDICO9, H2_MEDICO10,
                    H2_MEDICO11, H2_MEDICO12, H2_MEDICO13, H2_MEDICO14, H2_MEDICO15],
     medicos_triagem_names=[H2_MEDICO_TRIAGEM1, H2_MEDICO_TRIAGEM2],
-    salas_names=[H2_SALA1, H2_SALA2, H2_SALA3, H2_SALA4, H2_SALA5,
-                 H2_SALA6, H2_SALA7, H2_SALA8, H2_SALA9, H2_SALA10],
+    # Pool of doctors eligible for routine consultations (shift gating happens in CFP).
+    medicos_consultas_routine_names=[H2_MEDICO1, H2_MEDICO2, H2_MEDICO3, H2_MEDICO8, H2_MEDICO9, H2_MEDICO10],
+    # Pool of doctors eligible for emergency consultations (if needed by other flows).
+    medicos_consultas_emergency_names=[H2_MEDICO4, H2_MEDICO5, H2_MEDICO6, H2_MEDICO11, H2_MEDICO12, H2_MEDICO13],
+    salas_consultas_routine_names=[H2_SALA1, H2_SALA2, H2_SALA3, H2_SALA4, H2_SALA5, H2_SALA6, H2_SALA7],
+    salas_consultas_emergency_names=[H2_SALA8, H2_SALA9, H2_SALA10],
     equipamentos_map=[
         (H2_SALA_RAIOX1, SPECIALTY_RX), (H2_SALA_RAIOX2, SPECIALTY_RX),
         (H2_SALA_TAC1, SPECIALTY_TAC), (H2_SALA_TAC2, SPECIALTY_TAC),
@@ -346,34 +366,34 @@ def _build_registry_for_hospital(prefix, hospital_id, doctor_names, names):
     """Build registry entries for one hospital. prefix='' for H1, 'h2_' for H2."""
     p = prefix
     return {
-        jid(f"{p}medico1"): {"name": f"[H{hospital_id}] Dr. Jose Silva",      "type": "Especialista", "role": "medic", "zone": "normal",   "specialty": SPECIALTY_PEDIATRIA,  "hospital": hospital_id, "shift": "morning"},
-        jid(f"{p}medico2"): {"name": f"[H{hospital_id}] Dra. Beatriz Santos", "type": "Especialista", "role": "medic", "zone": "normal",   "specialty": SPECIALTY_ORTOPEDIA,  "hospital": hospital_id, "shift": "morning"},
-        jid(f"{p}medico3"): {"name": f"[H{hospital_id}] Dr. Henrique Costa",  "type": "Especialista", "role": "medic", "zone": "normal",   "specialty": SPECIALTY_CARDIOLOGIA,"hospital": hospital_id, "shift": "morning"},
-        jid(f"{p}medico4"): {"name": f"[H{hospital_id}] Dr. Ricardo Lima",    "type": "Especialista", "role": "medic", "zone": "surgical", "specialty": SPECIALTY_CIRURGIA,   "hospital": hospital_id, "shift": "morning"},
-        jid(f"{p}medico5"): {"name": f"[H{hospital_id}] Dra. Ana Leal",       "type": "Especialista", "role": "medic", "zone": "exam",     "specialty": SPECIALTY_RX,         "hospital": hospital_id, "shift": "morning"},
-        jid(f"{p}medico6"): {"name": f"[H{hospital_id}] Dr. Hugo Ribeiro",    "type": "Especialista", "role": "medic", "zone": "exam",     "specialty": SPECIALTY_TAC,        "hospital": hospital_id, "shift": "morning"},
-        jid(f"{p}medico7"): {"name": f"[H{hospital_id}] Dra. Marta Faria",    "type": "Especialista", "role": "medic", "zone": "exam",     "specialty": SPECIALTY_ANALISES,   "hospital": hospital_id, "shift": "morning"},
-        jid(f"{p}medico8"): {"name": f"[H{hospital_id}] Dr. Paulo Rocha",     "type": "Especialista", "role": "medic", "zone": "normal",   "specialty": SPECIALTY_PEDIATRIA,  "hospital": hospital_id, "shift": "afternoon"},
-        jid(f"{p}medico9"): {"name": f"[H{hospital_id}] Dra. Rita Goncalves", "type": "Especialista", "role": "medic", "zone": "normal",   "specialty": SPECIALTY_ORTOPEDIA,  "hospital": hospital_id, "shift": "afternoon"},
-        jid(f"{p}medico10"):{"name": f"[H{hospital_id}] Dr. Bruno Martins",   "type": "Especialista", "role": "medic", "zone": "normal",   "specialty": SPECIALTY_CARDIOLOGIA,"hospital": hospital_id, "shift": "afternoon"},
-        jid(f"{p}medico11"):{"name": f"[H{hospital_id}] Dra. Sara Pires",     "type": "Especialista", "role": "medic", "zone": "exam",     "specialty": SPECIALTY_RX,         "hospital": hospital_id, "shift": "afternoon"},
-        jid(f"{p}medico12"):{"name": f"[H{hospital_id}] Dr. Andre Lopes",     "type": "Especialista", "role": "medic", "zone": "exam",     "specialty": SPECIALTY_TAC,        "hospital": hospital_id, "shift": "afternoon"},
-        jid(f"{p}medico13"):{"name": f"[H{hospital_id}] Dra. Mariana Teixeira","type":"Especialista", "role": "medic", "zone": "exam",     "specialty": SPECIALTY_ANALISES,   "hospital": hospital_id, "shift": "afternoon"},
-        jid(f"{p}medico14"):{"name": f"[H{hospital_id}] Dr. Carlos Nogueira", "type": "Urgencista",   "role": "medic", "zone": "normal",   "specialty": SPECIALTY_PEDIATRIA,  "hospital": hospital_id, "shift": "night"},
-        jid(f"{p}medico15"):{"name": f"[H{hospital_id}] Dra. Ines Simoes",    "type": "Urgencista",   "role": "medic", "zone": "surgical", "specialty": SPECIALTY_CIRURGIA,   "hospital": hospital_id, "shift": "night"},
+        jid(f"{p}medico1"): {"name": f"[H{hospital_id}] Dr. Jose Silva",      "type": "Especialista", "role": "medic", "zone": "normal",   "specialty": SPECIALTY_PEDIATRIA,  "consult_mode": "routine",   "hospital": hospital_id, "shift": "morning"},
+        jid(f"{p}medico2"): {"name": f"[H{hospital_id}] Dra. Beatriz Santos", "type": "Especialista", "role": "medic", "zone": "normal",   "specialty": SPECIALTY_ORTOPEDIA,  "consult_mode": "routine","hospital": hospital_id, "shift": "morning"},
+        jid(f"{p}medico3"): {"name": f"[H{hospital_id}] Dr. Henrique Costa",  "type": "Especialista", "role": "medic", "zone": "normal",   "specialty": SPECIALTY_CARDIOLOGIA, "consult_mode": "routine","hospital": hospital_id, "shift": "morning"},
+        jid(f"{p}medico4"): {"name": f"[H{hospital_id}] Dr. Ricardo Lima",    "type": "Especialista", "role": "medic", "zone": "normal",   "specialty": SPECIALTY_PEDIATRIA,  "consult_mode": "emergency", "hospital": hospital_id, "shift": "morning"},
+        jid(f"{p}medico5"): {"name": f"[H{hospital_id}] Dra. Ana Leal",       "type": "Especialista", "role": "medic", "zone": "normal",   "specialty": SPECIALTY_ORTOPEDIA,  "consult_mode": "emergency", "hospital": hospital_id, "shift": "morning"},
+        jid(f"{p}medico6"): {"name": f"[H{hospital_id}] Dr. Hugo Ribeiro",    "type": "Especialista", "role": "medic", "zone": "normal",   "specialty": SPECIALTY_CARDIOLOGIA, "consult_mode": "emergency", "hospital": hospital_id, "shift": "morning"},
+        jid(f"{p}medico7"): {"name": f"[H{hospital_id}] Dra. Marta Faria",    "type": "Especialista", "role": "medic", "zone": "exam",     "specialty": SPECIALTY_RX,         "hospital": hospital_id, "shift": "morning"},
+        jid(f"{p}medico8"): {"name": f"[H{hospital_id}] Dr. Paulo Rocha",     "type": "Especialista", "role": "medic", "zone": "normal",   "specialty": SPECIALTY_PEDIATRIA,  "consult_mode": "routine",   "hospital": hospital_id, "shift": "afternoon"},
+        jid(f"{p}medico9"): {"name": f"[H{hospital_id}] Dra. Rita Goncalves", "type": "Especialista", "role": "medic", "zone": "normal",   "specialty": SPECIALTY_ORTOPEDIA,  "consult_mode": "routine",   "hospital": hospital_id, "shift": "afternoon"},
+        jid(f"{p}medico10"): {"name": f"[H{hospital_id}] Dr. Bruno Martins",   "type": "Especialista", "role": "medic", "zone": "normal",   "specialty": SPECIALTY_CARDIOLOGIA, "consult_mode": "routine",   "hospital": hospital_id, "shift": "afternoon"},
+        jid(f"{p}medico11"): {"name": f"[H{hospital_id}] Dra. Sara Pires",     "type": "Especialista", "role": "medic", "zone": "normal",   "specialty": SPECIALTY_PEDIATRIA,  "consult_mode": "emergency","hospital": hospital_id, "shift": "afternoon"},
+        jid(f"{p}medico12"): {"name": f"[H{hospital_id}] Dr. Andre Lopes",     "type": "Especialista", "role": "medic", "zone": "normal",   "specialty": SPECIALTY_ORTOPEDIA,  "consult_mode": "emergency","hospital": hospital_id, "shift": "afternoon"},
+        jid(f"{p}medico13"): {"name": f"[H{hospital_id}] Dra. Mariana Teixeira","type":"Especialista", "role": "medic", "zone": "normal",   "specialty": SPECIALTY_CARDIOLOGIA, "consult_mode": "emergency","hospital": hospital_id, "shift": "afternoon"},
+        jid(f"{p}medico14"): {"name": f"[H{hospital_id}] Dr. Carlos Nogueira", "type": "Urgencista",   "role": "medic", "zone": "normal",   "specialty": SPECIALTY_PEDIATRIA,  "hospital": hospital_id, "shift": "night"},
+        jid(f"{p}medico15"): {"name": f"[H{hospital_id}] Dra. Ines Simoes",    "type": "Urgencista",   "role": "medic", "zone": "normal",   "specialty": SPECIALTY_CARDIOLOGIA, "hospital": hospital_id, "shift": "night"},
         jid(f"{p}medico_triagem1"): {"name": f"[H{hospital_id}] Dr. Tiago Pinto",   "type": "Triagem", "role": "triage_medic", "zone": "triage", "specialty": SPECIALTY_TRIAGEM, "hospital": hospital_id, "shift": "morning"},
         jid(f"{p}medico_triagem2"): {"name": f"[H{hospital_id}] Dra. Leonor Viana", "type": "Triagem", "role": "triage_medic", "zone": "triage", "specialty": SPECIALTY_TRIAGEM, "hospital": hospital_id, "shift": "afternoon"},
 
-        jid(f"{p}sala1"):  {"name": f"[H{hospital_id}] Consultorio 1",  "wing": "primary",    "role": "room", "hospital": hospital_id},
-        jid(f"{p}sala2"):  {"name": f"[H{hospital_id}] Consultorio 2",  "wing": "primary",    "role": "room", "hospital": hospital_id},
-        jid(f"{p}sala3"):  {"name": f"[H{hospital_id}] Consultorio 3",  "wing": "primary",    "role": "room", "hospital": hospital_id},
-        jid(f"{p}sala4"):  {"name": f"[H{hospital_id}] Consultorio 4",  "wing": "primary",    "role": "room", "hospital": hospital_id},
-        jid(f"{p}sala5"):  {"name": f"[H{hospital_id}] Consultorio 5",  "wing": "primary",    "role": "room", "hospital": hospital_id},
-        jid(f"{p}sala6"):  {"name": f"[H{hospital_id}] Consultorio 6",  "wing": "primary",    "role": "room", "hospital": hospital_id},
-        jid(f"{p}sala7"):  {"name": f"[H{hospital_id}] Consultorio 7",  "wing": "primary",    "role": "room", "hospital": hospital_id},
-        jid(f"{p}sala8"):  {"name": f"[H{hospital_id}] Consultorio 8",  "wing": "primary",    "role": "room", "hospital": hospital_id},
-        jid(f"{p}sala9"):  {"name": f"[H{hospital_id}] Consultorio 9",  "wing": "primary",    "role": "room", "hospital": hospital_id},
-        jid(f"{p}sala10"): {"name": f"[H{hospital_id}] Consultorio 10", "wing": "primary",    "role": "room", "hospital": hospital_id},
+        jid(f"{p}sala1"):  {"name": f"[H{hospital_id}] Consultorio 1",  "wing": "primary",    "role": "room", "category": "routine",   "hospital": hospital_id},
+        jid(f"{p}sala2"):  {"name": f"[H{hospital_id}] Consultorio 2",  "wing": "primary",    "role": "room", "category": "routine",   "hospital": hospital_id},
+        jid(f"{p}sala3"):  {"name": f"[H{hospital_id}] Consultorio 3",  "wing": "primary",    "role": "room", "category": "routine",   "hospital": hospital_id},
+        jid(f"{p}sala4"):  {"name": f"[H{hospital_id}] Consultorio 4",  "wing": "primary",    "role": "room", "category": "routine",   "hospital": hospital_id},
+        jid(f"{p}sala5"):  {"name": f"[H{hospital_id}] Consultorio 5",  "wing": "primary",    "role": "room", "category": "routine",   "hospital": hospital_id},
+        jid(f"{p}sala6"):  {"name": f"[H{hospital_id}] Consultorio 6",  "wing": "primary",    "role": "room", "category": "routine",   "hospital": hospital_id},
+        jid(f"{p}sala7"):  {"name": f"[H{hospital_id}] Consultorio 7",  "wing": "primary",    "role": "room", "category": "routine",   "hospital": hospital_id},
+        jid(f"{p}sala8"):  {"name": f"[H{hospital_id}] Consultorio 8",  "wing": "primary",    "role": "room", "category": "emergency", "hospital": hospital_id},
+        jid(f"{p}sala9"):  {"name": f"[H{hospital_id}] Consultorio 9",  "wing": "primary",    "role": "room", "category": "emergency", "hospital": hospital_id},
+        jid(f"{p}sala10"): {"name": f"[H{hospital_id}] Consultorio 10", "wing": "primary",    "role": "room", "category": "emergency", "hospital": hospital_id},
 
         jid(f"{p}sala_raiox1"):   {"name": f"[H{hospital_id}] Sala de Raio-X 1",  "wing": "specialized", "role": "room", "specialty": SPECIALTY_RX,       "hospital": hospital_id},
         jid(f"{p}sala_raiox2"):   {"name": f"[H{hospital_id}] Sala de Raio-X 2",  "wing": "specialized", "role": "room", "specialty": SPECIALTY_RX,       "hospital": hospital_id},

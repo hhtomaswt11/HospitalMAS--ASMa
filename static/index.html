@@ -431,6 +431,30 @@
             text-transform: uppercase;
         }
 
+        /* Consult Mode Badge */
+        .consult-mode-badge {
+            display: inline-block;
+            font-size: 0.55rem;
+            font-weight: 700;
+            padding: 0.15rem 0.4rem;
+            border-radius: 999px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-top: 0.3rem;
+        }
+
+        .badge-routine {
+            background: rgba(16, 185, 129, 0.2);
+            color: #6ee7b7;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .badge-emergency {
+            background: rgba(239, 68, 68, 0.2);
+            color: #fca5a5;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
         /* Room Component */
         .room {
             background: rgba(2, 6, 23, 0.4);
@@ -625,8 +649,12 @@
                 <div class="rooms-grid" id="wing-triage"></div>
             </section>
             <section class="wing">
-                <div class="wing-title">Consultórios</div>
-                <div class="rooms-grid" id="wing-primary"></div>
+                <div class="wing-title">Consultórios de Rotina</div>
+                <div class="rooms-grid" id="wing-primary-routine"></div>
+            </section>
+            <section class="wing">
+                <div class="wing-title">Consultórios de Urgência</div>
+                <div class="rooms-grid" id="wing-primary-emergency"></div>
             </section>
             <section class="wing">
                 <div class="wing-title">Salas de Exames</div>
@@ -811,7 +839,8 @@
         // References — Hospital view
         const loungePatients = document.getElementById('lounge-patients');
         const staffMedics = document.getElementById('staff-medics');
-        const wingPrimary = document.getElementById('wing-primary');
+        const wingPrimaryRoutine = document.getElementById('wing-primary-routine');
+        const wingPrimaryEmergency = document.getElementById('wing-primary-emergency');
         const wingSpecialized = document.getElementById('wing-specialized');
         const wingSurgical = document.getElementById('wing-surgical');
         const wingTriage = document.getElementById('wing-triage');
@@ -852,6 +881,17 @@
             let avatarBorder = '';
             let scheduleBadge = '';
 
+            // ── Consult Mode Badge for medics ──
+            let consultModeBadge = '';
+            if (type === 'medic' && resourceState) {
+                const mode = resourceState.consult_mode;
+                if (mode && mode.toLowerCase() === 'routine') {
+                    consultModeBadge = '<div class="consult-mode-badge badge-routine">Rotina</div>';
+                } else if (mode && mode.toLowerCase() === 'emergency') {
+                    consultModeBadge = '<div class="consult-mode-badge badge-emergency">Urgência</div>';
+                }
+            }
+
             const avatarClass = type === 'medic' ? 'avatar-medic'
                 : type === 'nurse' ? 'avatar-medic'
                     : isEmergency ? 'avatar-emergency' : 'avatar-patient';
@@ -864,6 +904,7 @@
                     <div class="entity-info">
                         <div class="entity-name">${info.name || jid.split('@')[0]}</div>
                         <div class="entity-type">${subtitle}</div>
+                        ${consultModeBadge}
                         ${scheduleBadge}
                     </div>
                 </div>`;
@@ -902,28 +943,30 @@
             Object.keys(ENTITIES.medics).forEach(jid => {
                 const info = ENTITIES.medics[jid];
                 if (info && info.hospital == hospitalId) {
-                    const state = resources[jid] || {};
-                    // Mostrar apenas se estiver em turno OU ocupado a acabar um atendimento
-                    if (state.on_shift || (state.disponivel === false)) {
-                        filteredMedics[jid] = info;
-                    }
+                    // Show all medics for this hospital regardless of shift state
+                    filteredMedics[jid] = info;
                 }
             });
 
             Object.keys(ENTITIES.nurses || {}).forEach(jid => {
                 const info = ENTITIES.nurses[jid];
                 if (info && info.hospital == hospitalId) {
-                    const state = resources[jid] || {};
-                    if (state.on_shift || (state.disponivel === false)) {
-                        filteredNurses[jid] = info;
-                    }
+                    // Show all nurses for this hospital regardless of shift state
+                    filteredNurses[jid] = info;
                 }
             });
 
             const inRoomPatients = new Set();
             const inRoomMedics = new Set();
 
-            const roomsHtml = { primary: '', specialized: '', surgical: '', triage: '', inpatient: '' };
+            const roomsHtml = {
+                primary_routine: '',
+                primary_emergency: '',
+                specialized: '',
+                surgical: '',
+                triage: '',
+                inpatient: ''
+            };
 
             Object.keys(filteredRooms).forEach(roomJid => {
                 const roomInfo = filteredRooms[roomJid];
@@ -971,10 +1014,16 @@
                             <div class="slot" data-label="Profissional">${medicHtml}</div>
                         </div>
                     </div>`;
-                if (roomsHtml[roomInfo.wing] !== undefined) roomsHtml[roomInfo.wing] += html;
+                if (roomInfo.wing === 'primary') {
+                    const cat = roomInfo.category === 'emergency' ? 'primary_emergency' : 'primary_routine';
+                    roomsHtml[cat] += html;
+                } else if (roomsHtml[roomInfo.wing] !== undefined) {
+                    roomsHtml[roomInfo.wing] += html;
+                }
             });
 
-            wingPrimary.innerHTML = roomsHtml.primary || '<div class="empty-state">Sem quartos</div>';
+            wingPrimaryRoutine.innerHTML = roomsHtml.primary_routine || '<div class="empty-state">Sem quartos</div>';
+            wingPrimaryEmergency.innerHTML = roomsHtml.primary_emergency || '<div class="empty-state">Sem quartos</div>';
             wingSpecialized.innerHTML = roomsHtml.specialized || '<div class="empty-state">Sem quartos</div>';
             wingSurgical.innerHTML = roomsHtml.surgical || '<div class="empty-state">Sem quartos</div>';
             wingTriage.innerHTML = roomsHtml.triage || '<div class="empty-state">Sem quartos</div>';

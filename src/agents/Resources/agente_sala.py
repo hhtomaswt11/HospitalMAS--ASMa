@@ -1,6 +1,8 @@
 import json
+import asyncio
+import time
 
-from spade.behaviour import CyclicBehaviour
+from spade.behaviour import CyclicBehaviour, OneShotBehaviour
 from spade.message import Message
 
 from src.agents.Resources.resource_agent import ResourceAgent
@@ -14,11 +16,43 @@ class AgenteSala(ResourceAgent):
     def __init__(self, agent_jid, password, nome_sala="Sala", **kwargs):
         super().__init__(agent_jid, password, **kwargs)
         self.nome_sala = nome_sala
+        self.next_routine_slot_at = time.time()
+        self.agenda = {}
 
     def get_resource_name(self):
         return self.nome_sala
 
     class HandleProposalsBehaviour(CyclicBehaviour):
+        class ScheduledRoomOccupationBehaviour(OneShotBehaviour):
+            def __init__(self, patient_data, start_at):
+                super().__init__()
+                self.patient_data = patient_data
+                self.start_at = start_at
+            
+            async def run(self):
+                delay = max(0.0, self.start_at - time.time())
+                if delay > 0:
+                    await asyncio.sleep(delay)
+
+                expected_doente = self.patient_data.get("doente_jid")
+                if expected_doente not in self.agent.agenda:
+                    log(self.agent.nome_sala,
+                        f"[AGENDA-IGNORED] Reserva não encontrada na agenda ou cancelada para {self.patient_data.get('nome','?')}; salto do início de ocupação.",
+                        "YELLOW")
+                    return
+
+                # At this point the room should already be reserved (disponivel=False
+                # and paciente_atual set). Update the assignment type to active and
+                # emit status so dashboards reflect the start time.
+                self.agent.agenda.pop(expected_doente, None)
+                self.agent.current_assignment_type = "consultation"
+                self.agent.disponivel = False
+                self.agent.paciente_atual = expected_doente
+                log(self.agent.nome_sala,
+                    f"[AGENDA] Consultório reservado iniciou atendimento para {self.patient_data.get('nome', '?')}.",
+                    "BLUE")
+                await self.agent.send_status(self)
+
         async def run(self):
             msg = await self.receive(timeout=RESOURCE_RECEIVE_TIMEOUT_SECONDS)
             if msg is None:
@@ -29,10 +63,22 @@ class AgenteSala(ResourceAgent):
 
             if performative == "cfp":
                 data = json.loads(msg.body)
+                cfp_type = msg.get_metadata("type")
                 log(agent.nome_sala, f"[CFP] Call for Proposal received for patient {data.get('nome', '?')}", "MAGENTA")
 
                 reply = msg.make_reply()
-                if agent.disponivel:
+                if cfp_type == "consultation_cfp":
+                    slot_at = max(time.time(), agent.next_routine_slot_at)
+                    reply.set_metadata("performative", "propose")
+                    reply.body = json.dumps({
+                        "sala_jid": str(agent.jid),
+                        "nome_sala": agent.nome_sala,
+                        "slot": "next_available",
+                        "slot_at": slot_at,
+                        "score": max(0.0, slot_at - time.time()),
+                    })
+                    log(agent.nome_sala, "[PROPOSAL] Proposal emitted (slot routine).", "MAGENTA")
+                elif agent.disponivel:
                     reply.set_metadata("performative", "propose")
                     reply.body = json.dumps({
                         "sala_jid": str(agent.jid),
@@ -52,10 +98,31 @@ class AgenteSala(ResourceAgent):
 
             elif performative == "accept-proposal":
                 data = json.loads(msg.body)
-                agent.disponivel = False
-                agent.paciente_atual = data.get("doente_jid")
-                log(agent.nome_sala, f"[ALLOCATION] Allocation ACCEPTED for {data.get('nome', '?')}", "BLUE")
-                await self.agent.send_status(self)
+                if msg.get_metadata("type") == "consultation_schedule":
+                    start_at = float(data.get("consultation_start_at", time.time()))
+                    slot_ref = max(start_at, agent.next_routine_slot_at)
+                    agent.next_routine_slot_at = slot_ref + CONSULTATION_SLOT_SECONDS
+                    log(agent.nome_sala,
+                        f"[AGENDA] Slot de consultório marcado para {data.get('nome', '?')} em {max(0.0, start_at - time.time()):.1f}s.",
+                        "BLUE")
+                    
+                    # Add to agenda instead of overwriting active state immediately
+                    agent.agenda[data.get("doente_jid")] = data
+
+                    # If available, show next patient on dashboard
+                    if agent.disponivel:
+                        agent.current_assignment_type = "consultation_reserved"
+                        agent.paciente_atual = data.get("doente_jid")
+                        await self.agent.send_status(self)
+                    
+                    self.agent.add_behaviour(self.ScheduledRoomOccupationBehaviour(data, start_at))
+                else:
+                    agent.disponivel = False
+                    agent.paciente_atual = data.get("doente_jid")
+                    # When directly allocated (e.g., emergency), mark as emergency occupancy
+                    agent.current_assignment_type = "emergency"
+                    log(agent.nome_sala, f"[ALLOCATION] Allocation ACCEPTED for {data.get('nome', '?')}", "BLUE")
+                    await self.agent.send_status(self)
 
             elif performative == "inform" and msg.get_metadata("type") == "release":
                 prev = agent.paciente_atual
@@ -64,19 +131,38 @@ class AgenteSala(ResourceAgent):
                 await self.agent.send_status(self)
 
             elif performative == "cancel":
-                prev = agent.paciente_atual
-                agent.clear_assignment()
-                log(agent.nome_sala, f"[PREEMPTION] Preemption triggered. Resource freed (previous patient ID: {prev}).", "RED")
-                await self.agent.send_status(self)
+                data = json.loads(msg.body)
+                doente_jid = data.get("doente_jid")
+                
+                # Remove from agenda if present
+                if doente_jid in agent.agenda:
+                    agent.agenda.pop(doente_jid)
+                    log(agent.nome_sala, f"[AGENDA] Reserva de sala para {doente_jid} cancelada.", "RED")
 
-                reply = msg.make_reply()
-                reply.set_metadata("performative", "inform")
-                reply.set_metadata("type", "cancel_confirmed")
-                reply.body = json.dumps({
-                    "sala_jid": str(agent.jid),
-                    "status": "freed",
-                })
-                await self.send(reply)
+                # Only allow preemption for specific procedure types (exams/surgeries)
+                allowed_preempt_types = {"exam", "surgery"}
+                current = getattr(agent, "current_assignment_type", None)
+                if current in allowed_preempt_types:
+                    prev = agent.paciente_atual
+                    agent.clear_assignment()
+                    log(agent.nome_sala, f"[PREEMPTION] Preemption triggered. Resource freed (previous patient ID: {prev}).", "RED")
+                    await self.agent.send_status(self)
+
+                    reply = msg.make_reply()
+                    reply.set_metadata("performative", "inform")
+                    reply.set_metadata("type", "cancel_confirmed")
+                    reply.body = json.dumps({
+                        "sala_jid": str(agent.jid),
+                        "status": "freed",
+                    })
+                    await self.send(reply)
+                else:
+                    log(agent.nome_sala, f"[PREEMPTION-REFUSED] Cancel ignored for assignment_type={current}.", "YELLOW")
+                    reply = msg.make_reply()
+                    reply.set_metadata("performative", "inform")
+                    reply.set_metadata("type", "cancel_refused")
+                    reply.body = json.dumps({"sala_jid": str(agent.jid), "status": "refused", "reason": "assignment not preemptable"})
+                    await self.send(reply)
 
             elif performative == "reject-proposal":
                 log(agent.nome_sala, "[CONTRACT-NET] Proposta rejeitada pelo coordenador; sala mantém-se livre.", "MAGENTA")
@@ -90,3 +176,4 @@ class AgenteSala(ResourceAgent):
         log(self.nome_sala, f"AgenteSala initialized (available={self.disponivel})", "MAGENTA")
         self.add_behaviour(self.StartupStatusBehaviour())
         self.add_behaviour(self.HandleProposalsBehaviour())
+        

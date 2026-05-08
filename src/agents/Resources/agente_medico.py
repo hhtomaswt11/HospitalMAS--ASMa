@@ -38,12 +38,17 @@ class AgenteMedico(ResourceAgent):
         self._sim_start_time = time.time() - (8 * SIM_HOUR_SECONDS)
         profile = AGENT_REGISTRY.get(str(agent_jid), {})
         self._shift_type = profile.get("shift", "morning")
+        self._consult_mode = profile.get("consult_mode")
+        self.consult_mode = self._consult_mode  # Public attribute for status reporting
         self.on_shift = self.compute_shift_state()
         self.emergency_callable = True
+        self.next_routine_slot_at = time.time()
         self.current_assignment_type = None
         # Resultados assíncronos recebidos de MCDT/cirurgia, indexados por doente_jid.
         self.pending_exam_results = {}
         self.pending_surgery_results = {}
+        # Agenda de consultas marcadas para o futuro (doente_jid -> dados)
+        self.agenda = {}
 
     def get_resource_name(self):
         return self.nome_medico
@@ -80,14 +85,13 @@ class AgenteMedico(ResourceAgent):
 
     def is_available_for_cfp(self, cfp_type, patient_data) -> bool:
         """Return True if the doctor can accept this CFP considering schedule/hours."""
-        if not self.disponivel:
-            return False
         if not self.can_handle_cfp(cfp_type, patient_data):
             return False
         if self.weekly_hours_used >= self.max_weekly_hours:
             log(self.nome_medico,
                 f"[HORAS] {self.nome_medico} atingiu limite semanal ({self.weekly_hours_used:.0f}h). CFP recusado.", "RED")
             return False
+
         is_emergency = cfp_type == "emergency_cfp"
         is_routine_consultation = cfp_type == "consultation_cfp"
         is_clinical_continuous = cfp_type in {"emergency_cfp", "exam_cfp", "surgery_cfp", "internment_cfp"}
@@ -97,6 +101,17 @@ class AgenteMedico(ResourceAgent):
         # e devem depender da escala/turno/especialidade, não do horário administrativo
         # das consultas externas.
         if is_routine_consultation:
+            # Do not accept a new routine CFP if we already have a scheduled routine
+            # reservation pending. Otherwise the coordinator may "stack" reservations
+            # and overwrite `sala_atual`, causing AGENDA-IGNORED while the room still starts.
+            if getattr(self, "current_assignment_type", None) == "consultation_reserved":
+                log(
+                    self.nome_medico,
+                    f"[AGENDA] {self.nome_medico} recusou CFP de rotina: já existe uma reserva pendente.",
+                    "YELLOW",
+                )
+                return False
+
             elapsed = time.time() - self._sim_start_time
             current_hour = (elapsed % SIM_DAY_SECONDS) / SIM_HOUR_SECONDS
             if not (ROUTINE_START_H <= current_hour < ROUTINE_END_H):
@@ -106,6 +121,17 @@ class AgenteMedico(ResourceAgent):
                     "RED",
                 )
                 return False
+            # Rotina também requer estar em turno (não pode ser agendada fora de turno)
+            if not self.on_shift:
+                log(self.nome_medico,
+                    f"[ESCALA] {self.nome_medico} recusou consulta de rotina: fora do turno.",
+                    "YELLOW")
+                return False
+            # If in turno and within hours, routine consultation can be proposed even if ocupado now
+            return True
+
+        if not self.disponivel:
+            return False
 
         if not self.on_shift:
             if is_emergency and self.emergency_callable and ALLOW_EMERGENCY_CALL_OUTSIDE_SHIFT:
@@ -121,16 +147,21 @@ class AgenteMedico(ResourceAgent):
             return False
         return True
 
-    def build_proposal_body(self) -> dict:
+    def build_proposal_body(self, cfp_type=None) -> dict:
+        slot_at = time.time()
+        if cfp_type == "consultation_cfp":
+            slot_at = max(slot_at, self.next_routine_slot_at)
+
         return {
             "medico_jid": str(self.jid),
             "nome_medico": self.nome_medico,
             "slot": "next_available",
+            "slot_at": slot_at,
             "weekly_hours_used": self.weekly_hours_used,
             "max_weekly_hours": self.max_weekly_hours,
             "on_shift": self.on_shift,
             "emergency_callable": self.emergency_callable,
-            "score": self._compute_score(),
+            "score": self._compute_score() + (max(0.0, slot_at - time.time()) if cfp_type == "consultation_cfp" else 0.0),
         }
 
     def _compute_score(self) -> float:
@@ -150,10 +181,10 @@ class AgenteMedico(ResourceAgent):
         if cfp_type == "consultation_cfp":
             if profile.get("shift") == "night" or profile.get("type") == "Urgencista":
                 return False
-            return zone == "normal" and specialty == requested_specialty
+            return zone == "normal" and specialty == requested_specialty and self._consult_mode == "routine"
             
         if cfp_type == "emergency_cfp":
-            return zone == "normal" and specialty == requested_specialty
+            return zone == "normal" and specialty == requested_specialty and self._consult_mode == "emergency"
         if cfp_type == "surgery_cfp":
             return zone == "surgical" and specialty == SPECIALTY_CIRURGIA
         if cfp_type == "exam_cfp":
@@ -227,7 +258,10 @@ class AgenteMedico(ResourceAgent):
                 msg_finish_cons.thread = doente_jid
                 await self.send(msg_finish_cons)
 
-                sala_consulta = self.agent.sala_atual
+                # Prefer the room from the patient payload; fallback to agent state.
+                # In some edge cases the scheduled payload may lose sala_jid and the
+                # doctor would otherwise fail to release the room.
+                sala_consulta = self.patient_data.get("sala_jid") or self.agent.sala_atual
                 self.agent.clear_assignment()
                 await self.agent.send_status(self)
 
@@ -359,15 +393,17 @@ class AgenteMedico(ResourceAgent):
                     msg_discharge.body = json.dumps({"estado": "Alta clinica concedida"})
                     await self.send(msg_discharge)
 
-                sala_consulta = self.agent.sala_atual
+                # Prefer the room from the patient payload; fallback to agent state.
+                sala_consulta = self.patient_data.get("sala_jid") or self.agent.sala_atual
                 self.agent.clear_assignment()
                 await self.agent.send_status(self)
 
-                msg_finish_cons = Message(to=finish_coord)
-                msg_finish_cons.set_metadata("performative", "inform")
-                msg_finish_cons.set_metadata("type", "routine_finished")
-                msg_finish_cons.body = json.dumps({"doente_jid": doente_jid, "nome": nome})
-                await self.send(msg_finish_cons)
+                if not is_urgent:
+                    msg_finish_cons = Message(to=finish_coord)
+                    msg_finish_cons.set_metadata("performative", "inform")
+                    msg_finish_cons.set_metadata("type", "routine_finished")
+                    msg_finish_cons.body = json.dumps({"doente_jid": doente_jid, "nome": nome})
+                    await self.send(msg_finish_cons)
 
                 if sala_consulta:
                     msg_free_sala = Message(to=sala_consulta)
@@ -507,6 +543,43 @@ class AgenteMedico(ResourceAgent):
             msg_discharge.thread = self.data.get("doente_jid")
             await self.send(msg_discharge)
 
+    class ScheduledConsultationBehaviour(OneShotBehaviour):
+        def __init__(self, patient_data, start_at):
+            super().__init__()
+            self.patient_data = patient_data
+            self.start_at = start_at
+
+        async def run(self):
+            delay = max(0.0, self.start_at - time.time())
+            if delay > 0:
+                await asyncio.sleep(delay)
+
+            expected_doente = self.patient_data.get("doente_jid")
+            if expected_doente not in self.agent.agenda:
+                log(self.agent.nome_medico,
+                    f"[AGENDA-IGNORED] Reserva não encontrada na agenda ou cancelada para {self.patient_data.get('nome','?')}; salto do início de consulta.",
+                    "YELLOW")
+                return
+
+            # Se o médico estiver ocupado no instante marcado, aguarda libertação.
+            while not self.agent.disponivel:
+                await asyncio.sleep(0.2)
+
+            # Activate the reservation: mark as active consultation and start.
+            self.agent.agenda.pop(expected_doente, None)
+            self.agent.disponivel = False
+            self.agent.paciente_atual = expected_doente
+            self.agent.sala_atual = self.patient_data.get("sala_jid")
+            self.agent.current_assignment_type = "consultation"
+            self.agent.add_hours("consultation")
+            await self.agent.send_status(self)
+
+            nome = self.patient_data.get("nome", "?")
+            log(self.agent.nome_medico,
+                f"[AGENDA] Início da consulta agendada para {nome}.",
+                "GREEN")
+            self.agent.add_behaviour(self.agent.EvaluatePatientBehaviour(self.patient_data))
+
     class HandleProposalsBehaviour(CyclicBehaviour):
         async def run(self):
             msg = await self.receive(timeout=RESOURCE_RECEIVE_TIMEOUT_SECONDS)
@@ -525,7 +598,7 @@ class AgenteMedico(ResourceAgent):
                 reply = msg.make_reply()
                 if agent.is_available_for_cfp(cfp_type, data):
                     reply.set_metadata("performative", "propose")
-                    reply.body = json.dumps(agent.build_proposal_body())
+                    reply.body = json.dumps(agent.build_proposal_body(cfp_type))
                     log(agent.nome_medico, "[PROPOSAL] Proposal emitted (Status: Available).", "CYAN")
                 else:
                     reply.set_metadata("performative", "reject-proposal")
@@ -538,9 +611,7 @@ class AgenteMedico(ResourceAgent):
 
             elif performative == "accept-proposal":
                 data = json.loads(msg.body)
-                agent.disponivel = False
-                agent.paciente_atual = data.get("doente_jid")
-                agent.sala_atual = data.get("sala_jid")
+                msg_type = msg.get_metadata("type")
 
                 sender = str(msg.sender).split("@")[0]
 
@@ -551,18 +622,45 @@ class AgenteMedico(ResourceAgent):
                 coord_int_name = agent._coord_int.split("@")[0] if hasattr(agent, '_coord_int') else ""
 
                 if sender in [coord_cons_name, coord_urg_name]:
-                    proc_type = "emergency" if sender == coord_urg_name else "consultation"
-                    agent.current_assignment_type = proc_type
-                    agent.add_hours(proc_type)
-                    if sender == coord_urg_name and not agent.on_shift:
+                    if sender == coord_cons_name or msg_type == "consultation_schedule":
+                        start_at = float(data.get("consultation_start_at", time.time()))
+                        slot_ref = max(start_at, agent.next_routine_slot_at)
+                        agent.next_routine_slot_at = slot_ref + CONSULTATION_SLOT_SECONDS
                         log(agent.nome_medico,
-                            f"[URGÊNCIA] Médico selecionado por disponibilidade + especialidade + carga horária.", "RED")
-                    log(agent.nome_medico,
-                        f"[ALLOCATION] Allocation ACCEPTED for {data.get('nome', '?')}. Initiating consultation.",
-                        "BLUE")
-                    await self.agent.send_status(self)
-                    agent.add_behaviour(agent.EvaluatePatientBehaviour(data))
+                            f"[AGENDA] Consulta agendada para {data.get('nome', '?')} em {max(0.0, start_at - time.time()):.1f}s.",
+                            "GREEN")
+                        
+                        # Add to agenda instead of overwriting active state
+                        agent.agenda[data.get("doente_jid")] = data
+                        
+                        # If not busy, update status fields so dashboard shows the next patient
+                        # but don't set disponivel=False yet.
+                        if agent.disponivel:
+                            agent.current_assignment_type = "consultation_reserved"
+                            agent.paciente_atual = data.get("doente_jid")
+                            agent.sala_atual = data.get("sala_jid")
+                            await self.agent.send_status(self)
+                        
+                        agent.add_behaviour(agent.ScheduledConsultationBehaviour(data, start_at))
+                    else:
+                        agent.disponivel = False
+                        agent.paciente_atual = data.get("doente_jid")
+                        agent.sala_atual = data.get("sala_jid")
+                        proc_type = "emergency"
+                        agent.current_assignment_type = proc_type
+                        agent.add_hours(proc_type)
+                        if not agent.on_shift:
+                            log(agent.nome_medico,
+                                "[URGÊNCIA] Médico selecionado por disponibilidade + especialidade + carga horária.", "RED")
+                        log(agent.nome_medico,
+                            f"[ALLOCATION] Allocation ACCEPTED for {data.get('nome', '?')}. Initiating consultation.",
+                            "BLUE")
+                        await self.agent.send_status(self)
+                        agent.add_behaviour(agent.EvaluatePatientBehaviour(data))
                 elif sender == coord_cir_name:
+                    agent.disponivel = False
+                    agent.paciente_atual = data.get("doente_jid")
+                    agent.sala_atual = data.get("sala_jid")
                     if data.get("sala_jid"):
                         agent.bloco_atual = data.get("sala_jid")
                     agent.current_assignment_type = "surgery"
@@ -573,6 +671,9 @@ class AgenteMedico(ResourceAgent):
                     await self.agent.send_status(self)
                     agent.add_behaviour(agent.ExecuteProcedureBehaviour(data))
                 elif sender == coord_exam_name:
+                    agent.disponivel = False
+                    agent.paciente_atual = data.get("doente_jid")
+                    agent.sala_atual = data.get("sala_jid")
                     agent.current_assignment_type = "exam"
                     agent.add_hours("exam")
                     log(agent.nome_medico,
@@ -581,6 +682,9 @@ class AgenteMedico(ResourceAgent):
                     await self.agent.send_status(self)
                     agent.add_behaviour(agent.ExecuteExamBehaviour(data))
                 elif sender == coord_int_name:
+                    agent.disponivel = False
+                    agent.paciente_atual = data.get("doente_jid")
+                    agent.sala_atual = data.get("sala_jid")
                     agent.current_assignment_type = "internment"
                     agent.add_hours("internment")
                     log(agent.nome_medico,
@@ -638,17 +742,38 @@ class AgenteMedico(ResourceAgent):
                     "CYAN")
 
             elif performative == "cancel":
-                prev = agent.paciente_atual
-                agent.clear_assignment()
-                log(agent.nome_medico,
-                    f"[PREEMPTION] Preemption triggered. Resource freed (previous patient ID: {prev}).", "RED")
-                await self.agent.send_status(self)
+                data = json.loads(msg.body)
+                doente_jid = data.get("doente_jid")
+                
+                # Remove from agenda if present
+                if doente_jid in agent.agenda:
+                    agent.agenda.pop(doente_jid)
+                    log(agent.nome_medico, f"[AGENDA] Agendamento para {doente_jid} cancelado.", "RED")
 
-                reply = msg.make_reply()
-                reply.set_metadata("performative", "inform")
-                reply.set_metadata("type", "cancel_confirmed")
-                reply.body = json.dumps({"medico_jid": str(agent.jid), "status": "freed"})
-                await self.send(reply)
+                # Only allow preemption for non-routine clinical procedures
+                allowed_preempt_types = {"exam", "surgery"}
+                current = getattr(agent, "current_assignment_type", None)
+                if current in allowed_preempt_types:
+                    prev = agent.paciente_atual
+                    agent.clear_assignment()
+                    log(agent.nome_medico,
+                        f"[PREEMPTION] Preemption triggered. Resource freed (previous patient ID: {prev}).", "RED")
+                    await self.agent.send_status(self)
+
+                    reply = msg.make_reply()
+                    reply.set_metadata("performative", "inform")
+                    reply.set_metadata("type", "cancel_confirmed")
+                    reply.body = json.dumps({"medico_jid": str(agent.jid), "status": "freed"})
+                    await self.send(reply)
+                else:
+                    # Refuse to preempt routine consultations
+                    log(agent.nome_medico,
+                        f"[PREEMPTION-REFUSED] Cancel ignored for assignment_type={current}.", "YELLOW")
+                    reply = msg.make_reply()
+                    reply.set_metadata("performative", "inform")
+                    reply.set_metadata("type", "cancel_refused")
+                    reply.body = json.dumps({"medico_jid": str(agent.jid), "status": "refused", "reason": "assignment not preemptable"})
+                    await self.send(reply)
 
             else:
                 log(agent.nome_medico,

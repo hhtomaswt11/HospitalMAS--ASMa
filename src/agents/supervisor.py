@@ -166,55 +166,6 @@ class Supervisor(Agent):
                         f"[ALERTA-EMERGÊNCIA] Recebido alerta prioritário! "
                         f"Doente: {data['nome']} | Prioridade: {data['prioridade']}", "RED")
 
-                elif performative == "request" and msg_type == "preemption_request":
-                    data = json.loads(msg.body)
-                    urgente_jid = data.get("urgente_jid") or data.get("doente_jid")
-                    urgente_nome = data.get("urgente_nome") or data.get("nome", "?")
-                    prioridade = data.get("prioridade")
-
-                    if not urgente_jid:
-                        log(self.agent._supervisor_name,
-                            "[PREEMPÇÃO-ERRO] Pedido de preempção inválido: urgente_jid em falta.", "RED")
-                        return
-
-                    log(self.agent._supervisor_name,
-                        f"[PREEMPÇÃO] Pedido recebido de urgências para {urgente_nome}.", "RED")
-
-                    preempt = Message(to=self.agent._coord_cons)
-                    preempt.set_metadata("performative", "request")
-                    preempt.set_metadata("type", "preemption_order")
-                    preempt.body = json.dumps({
-                        "urgente_jid": urgente_jid,
-                        "urgente_nome": urgente_nome,
-                        "prioridade": prioridade,
-                    })
-                    preempt.thread = urgente_jid
-                    await self.send(preempt)
-
-                elif performative == "inform" and msg_type == "preemption_done":
-                    data = json.loads(msg.body)
-                    if data.get("status") == "resources_freed":
-                        log(self.agent._supervisor_name,
-                            "[PREEMPÇÃO-SUCESSO] Recursos libertados com sucesso por preempção.", "GREEN")
-                        freed = Message(to=self.agent._coord_urg)
-                        freed.set_metadata("performative", "inform")
-                        freed.set_metadata("type", "resources_freed")
-                        freed.body = json.dumps({
-                            "status": "resources_available",
-                            "medico_jid": data.get("medico_jid"),
-                            "sala_jid": data.get("sala_jid"),
-                        })
-                        await self.send(freed)
-                    else:
-                        log(self.agent._supervisor_name,
-                            "[PREEMPÇÃO-AVISO] Sem alocações de rotina para cancelar. Fila de espera mandatória.",
-                            "YELLOW")
-                        freed = Message(to=self.agent._coord_urg)
-                        freed.set_metadata("performative", "inform")
-                        freed.set_metadata("type", "resources_freed")
-                        freed.body = json.dumps({"status": "resources_available"})
-                        await self.send(freed)
-
                 elif performative == "inform" and msg_type == "routing_update":
                     data = json.loads(msg.body)
                     timestamp = datetime.now().strftime("%H:%M:%S")
@@ -260,6 +211,26 @@ class Supervisor(Agent):
                     log(self.agent._supervisor_name,
                         f"[LOAD-QUERY] Respondido: esp={requested_specialty}, "
                         f"spec_load={spec_load}, total={total_load}", "CYAN")
+
+                elif performative == "request" and msg_type == "preemption_order":
+                    # Refuse preemption requests that target routine consultations.
+                    data = json.loads(msg.body)
+                    target_queue = data.get("target_queue") or data.get("queue") or ""
+                    patient_tipo = data.get("tipo") or data.get("type") or ""
+                    # If the request is aiming at routine consultations, ignore/refuse it.
+                    if str(target_queue).lower().startswith("routine") or str(patient_tipo).lower() == "normal":
+                        log(self.agent._supervisor_name,
+                            f"[PREEMPÇÃO-IGNORADA] Recusado pedido de preempção para fila rotina: {data.get('doente_jid')}",
+                            "YELLOW")
+                        reply = msg.make_reply()
+                        reply.set_metadata("performative", "inform")
+                        reply.set_metadata("type", "preemption_refused")
+                        reply.body = json.dumps({"reason": "routine consultations are not preemptable"})
+                        await self.send(reply)
+                    else:
+                        # For non-routine preemption requests let existing flows handle them
+                        log(self.agent._supervisor_name,
+                            f"[PREEMPÇÃO] Pedido recebido de urgências para {data.get('doente_jid')}.", "RED")
             except Exception as e:
                 import traceback
                 print(f"[SUPERVISOR-ERROR] Error in MonitorBehaviour: {e}")

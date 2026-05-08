@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 
 from spade.agent import Agent
 from spade.behaviour import CyclicBehaviour
@@ -15,8 +16,8 @@ class CoordenadorConsultas(Agent):
         cfg = hospital_config or H1_CONFIG
         self.hospital_config = cfg
         self._supervisor = cfg["supervisor"]
-        self._medicos = cfg["medicos"]
-        self._salas = cfg["salas"]
+        self._medicos = cfg["medicos_consultas_routine"]
+        self._salas = cfg["salas_consultas_routine"]
         self._agent_registry = AGENT_REGISTRY
         self._coord_name = str(agent_jid).split("@")[0]
         import time
@@ -25,8 +26,6 @@ class CoordenadorConsultas(Agent):
         self.alocacoes = {}
         self.pending_requests = {s: [] for s in ROUTINE_SPECIALTIES}
         self.pending_routine_patient_ids = set()
-        self.routine_hold = False
-        self.blocked_specialties = set()
 
     def add_pending_request(self, data, prepend=False):
         doente_jid = data.get("doente_jid")
@@ -136,26 +135,6 @@ class CoordenadorConsultas(Agent):
                     f"[FILA] Pedido duplicado ignorado para {data.get('nome', '?')}.",
                     "YELLOW")
 
-        async def process_preemption_order(self, data, dispatch_after=False, force_hold=False):
-            if force_hold:
-                self.agent.routine_hold = True
-            await self.handle_preemption(data)
-            if dispatch_after:
-                await self.dispatch_routine_batch()
-
-        async def process_routine_gate(self, data, dispatch_after=False):
-            blocked = data.get("blocked_specialties")
-            if isinstance(blocked, list):
-                self.agent.blocked_specialties = {s for s in blocked if s}
-                self.agent.routine_hold = len(self.agent.blocked_specialties) > 0
-            else:
-                self.agent.routine_hold = bool(data.get("hold", False))
-                self.agent.blocked_specialties = set()
-            estado = "BLOQUEADA" if self.agent.routine_hold else "ATIVA"
-            log(self.agent._coord_name, f"[PRIORIDADE] Via de rotina agora: {estado}", "YELLOW")
-            if dispatch_after and not self.agent.routine_hold:
-                await self.dispatch_routine_batch()
-
         async def process_routine_finished(self, data, dispatch_after=False):
             doente_jid = data.get("doente_jid")
             nome = data.get("nome", "?")
@@ -182,14 +161,6 @@ class CoordenadorConsultas(Agent):
                     f"[PEDIDO] Pedido de consulta de rotina recebido: {data['nome']}",
                     "GREEN")
                 await self.process_patient_request(data, dispatch_after=True)
-
-            elif performative == "request" and msg_type == "preemption_order":
-                data = json.loads(msg.body)
-                await self.process_preemption_order(data, dispatch_after=True)
-
-            elif performative == "inform" and msg_type == "routine_gate":
-                data = json.loads(msg.body)
-                await self.process_routine_gate(data, dispatch_after=True)
 
             elif performative == "inform" and msg_type == "routine_finished":
                 data = json.loads(msg.body)
@@ -231,16 +202,6 @@ class CoordenadorConsultas(Agent):
                 await self.process_patient_request(data, dispatch_after=False)
                 return
 
-            if performative == "request" and msg_type == "preemption_order":
-                data = json.loads(msg.body)
-                await self.process_preemption_order(data, dispatch_after=False, force_hold=True)
-                return
-
-            if performative == "inform" and msg_type == "routine_gate":
-                data = json.loads(msg.body)
-                await self.process_routine_gate(data, dispatch_after=False)
-                return
-
             if performative == "inform" and msg_type == "routine_finished":
                 data = json.loads(msg.body)
                 await self.process_routine_finished(data, dispatch_after=False)
@@ -266,12 +227,6 @@ class CoordenadorConsultas(Agent):
                      pass # Silencioso para não inundar o log, os médicos já rejeitam no CFP
                 return False
 
-            if self.agent.routine_hold and not self.agent.blocked_specialties:
-                log(self.agent._coord_name,
-                    "[PRIORIDADE] Rotina temporariamente bloqueada: urgências em espera.",
-                    "RED")
-                return False
-
             if not self.agent.has_pending_requests():
                 return False
 
@@ -283,12 +238,6 @@ class CoordenadorConsultas(Agent):
             for specialty in ordered_specialties:
                 queue = self.agent.pending_requests.get(specialty, [])
                 if not queue:
-                    continue
-
-                if specialty in self.agent.blocked_specialties:
-                    log(self.agent._coord_name,
-                        f"[PRIORIDADE] Especialidade de rotina bloqueada por urgência: {specialty}.",
-                        "RED")
                     continue
 
                 patient = queue[0]
@@ -324,18 +273,6 @@ class CoordenadorConsultas(Agent):
                 log(agent._coord_name,
                     f"[CFP-FILTER] Sem médicos compatíveis (esp={requested_specialty}) para {nome}.",
                     "YELLOW")
-                return False
-
-            if requested_specialty in agent.blocked_specialties:
-                log(agent._coord_name,
-                    f"[PRIORIDADE] Alocação de rotina suspensa para {nome} (urgência ativa na especialidade {requested_specialty}).",
-                    "RED")
-                return False
-
-            if agent.routine_hold and not agent.blocked_specialties:
-                log(agent._coord_name,
-                    f"[PRIORIDADE] Alocação de rotina suspensa para {nome} (urgência em espera).",
-                    "RED")
                 return False
 
             log(agent._coord_name,
@@ -387,35 +324,68 @@ class CoordenadorConsultas(Agent):
                     pass
                 # Removido o break para garantir leitura de todas as respostas
 
-            if requested_specialty in agent.blocked_specialties:
-                return False
-            if agent.routine_hold and not agent.blocked_specialties:
-                return False
+            now = time.time()
+            medico_proposta = None
+            sala_proposta = None
+            consultation_start_at = now
 
-            medico_proposta = min(medico_propostas, key=lambda p: p.get("score", 999)) if medico_propostas else None
-            sala_proposta = min(sala_propostas, key=lambda p: p.get("score", 999)) if sala_propostas else None
+            if medico_propostas and sala_propostas:
+                def _slot_at(proposta):
+                    slot = proposta.get("slot_at")
+                    try:
+                        return float(slot)
+                    except Exception:
+                        return now
+
+                best = None
+                for m_prop in medico_propostas:
+                    for s_prop in sala_propostas:
+                        start_at = max(_slot_at(m_prop), _slot_at(s_prop))
+                        combined_score = m_prop.get("score", 999) + s_prop.get("score", 999)
+                        key = (start_at, combined_score)
+                        if best is None or key < best[0]:
+                            best = (key, m_prop, s_prop, start_at)
+
+                if best:
+                    _, medico_proposta, sala_proposta, consultation_start_at = best
 
             if medico_proposta and sala_proposta:
                 acc_m = Message(to=medico_proposta["medico_jid"])
                 acc_m.set_metadata("performative", "accept-proposal")
+                acc_m.set_metadata("type", "consultation_schedule")
                 acc_m.body = json.dumps({
                     "doente_jid": doente_jid,
                     "nome": nome,
                     "tipo": patient_data.get("tipo", "Normal"),
-                    "sala_jid": sala_proposta["sala_jid"]
+                    "sala_jid": sala_proposta["sala_jid"],
+                    "consultation_start_at": consultation_start_at,
                 })
                 acc_m.thread = doente_jid
                 await self.send(acc_m)
 
                 acc_s = Message(to=sala_proposta["sala_jid"])
                 acc_s.set_metadata("performative", "accept-proposal")
+                acc_s.set_metadata("type", "consultation_schedule")
                 acc_s.body = json.dumps({
                     "doente_jid": doente_jid,
                     "nome": nome,
-                    "tipo": patient_data.get("tipo", "Normal")
+                    "tipo": patient_data.get("tipo", "Normal"),
+                    "consultation_start_at": consultation_start_at,
                 })
                 acc_s.thread = doente_jid
                 await self.send(acc_s)
+
+                schedule_msg = Message(to=doente_jid)
+                schedule_msg.set_metadata("performative", "inform")
+                schedule_msg.set_metadata("type", "consultation_scheduled")
+                schedule_msg.body = json.dumps({
+                    "nome": nome,
+                    "medico_jid": medico_proposta["medico_jid"],
+                    "sala_jid": sala_proposta["sala_jid"],
+                    "consultation_start_at": consultation_start_at,
+                })
+                schedule_msg.thread = doente_jid
+                await self.send(schedule_msg)
 
                 for proposta in medico_propostas:
                     m_jid = proposta.get("medico_jid")
@@ -444,110 +414,18 @@ class CoordenadorConsultas(Agent):
                     "sala_jid": sala_proposta["sala_jid"],
                 }
 
+                # Log allocation including scheduled slot for observability
                 log(agent._coord_name,
                     f"[ALOCAÇÃO] Consulta de Rotina AGENDADA: {nome} → "
                     f"Médico={medico_proposta['nome_medico']}, "
-                    f"Sala={sala_proposta['nome_sala']}", "BOLD")
+                    f"Sala={sala_proposta['nome_sala']}, "
+                    f"slot_at={consultation_start_at:.3f}s", "BOLD")
                 return True
             else:
                 log(agent._coord_name,
                     f"[ALOCAÇÃO-FALHOU] Impossível agendar consulta de rotina a {nome} "
                     f"(recursos indisponíveis). Pedido pendente.", "RED")
                 return False
-
-        async def await_preemption_confirmations(self, doente_jid, medico_jid, sala_jid):
-            confirmed_medico = False
-            confirmed_sala = False
-            deadline = asyncio.get_running_loop().time() + PREEMPTION_CONFIRM_WAIT_SECONDS
-
-            while not (confirmed_medico and confirmed_sala):
-                remaining = deadline - asyncio.get_running_loop().time()
-                if remaining <= 0:
-                    break
-                reply = await self.receive(timeout=remaining)
-                if reply is None:
-                    break
-                if reply.thread != doente_jid:
-                    await self.handle_out_of_band_message(reply)
-                    continue
-                if (reply.get_metadata("performative") != "inform"
-                        or reply.get_metadata("type") != "cancel_confirmed"):
-                    continue
-                try:
-                    body = json.loads(reply.body)
-                except Exception:
-                    continue
-                sender_bare = str(reply.sender).split("/")[0]
-                if sender_bare == str(medico_jid).split("/")[0] and body.get("status") == "freed":
-                    confirmed_medico = True
-                elif sender_bare == str(sala_jid).split("/")[0] and body.get("status") == "freed":
-                    confirmed_sala = True
-
-            return confirmed_medico, confirmed_sala
-
-        async def handle_preemption(self, data):
-            agent = self.agent
-            log(agent._coord_name,
-                f"⚠️  ORDEM DE PREEMPTION recebida do Supervisor! "
-                f"Motivo: urgência de {data.get('urgente_nome', '?')}",
-                "RED")
-
-            if agent.alocacoes:
-                doente_cancelar = list(agent.alocacoes.keys())[0]
-                aloc = agent.alocacoes.pop(doente_cancelar)
-
-                log(agent._coord_name,
-                    f"[PREEMPÇÃO] A cancelar alocação de rotina de {aloc['nome']} para "
-                    f"libertar recursos...", "RED")
-
-                cancel_m = Message(to=aloc["medico_jid"])
-                cancel_m.set_metadata("performative", "cancel")
-                cancel_m.set_metadata("type", "preemption_cancel")
-                cancel_m.body = json.dumps({"motivo": "Preemption por urgência", "doente_original": aloc["nome"]})
-                cancel_m.thread = doente_cancelar
-                await self.send(cancel_m)
-
-                cancel_s = Message(to=aloc["sala_jid"])
-                cancel_s.set_metadata("performative", "cancel")
-                cancel_s.set_metadata("type", "preemption_cancel")
-                cancel_s.body = json.dumps({"motivo": "Preemption por urgência", "doente_original": aloc["nome"]})
-                cancel_s.thread = doente_cancelar
-                await self.send(cancel_s)
-
-                agent.add_pending_request({
-                    "doente_jid": doente_cancelar,
-                    "nome": aloc["nome"],
-                    "tipo": "Normal",
-                    "prioridade": 0,
-                    "especialidade": aloc.get("especialidade"),
-                }, prepend=True)
-                await self.publish_waitlist()
-
-                confirmed_medico, confirmed_sala = await self.await_preemption_confirmations(
-                    doente_cancelar, aloc["medico_jid"], aloc["sala_jid"]
-                )
-
-                status = "resources_freed" if (confirmed_medico and confirmed_sala) else "cancel_timeout"
-
-                confirm = Message(to=agent._supervisor)
-                confirm.set_metadata("performative", "inform")
-                confirm.set_metadata("type", "preemption_done")
-                confirm.body = json.dumps({
-                    "status": status,
-                    "medico_jid": aloc["medico_jid"],
-                    "sala_jid": aloc["sala_jid"],
-                    "confirmed_medico": confirmed_medico,
-                    "confirmed_sala": confirmed_sala,
-                })
-                await self.send(confirm)
-            else:
-                log(agent._coord_name,
-                    "[PREEMPÇÃO-FALHOU] Não existem alocações de rotina ativas para libertar.", "RED")
-                confirm = Message(to=agent._supervisor)
-                confirm.set_metadata("performative", "inform")
-                confirm.set_metadata("type", "preemption_done")
-                confirm.body = json.dumps({"status": "no_allocations"})
-                await self.send(confirm)
 
     async def setup(self):
         log(self._coord_name, "Coordenador de Consultas iniciado.", "GREEN")

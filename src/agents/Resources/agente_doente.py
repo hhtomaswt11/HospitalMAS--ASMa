@@ -1,4 +1,5 @@
 import json
+import time
 
 from spade.agent import Agent
 from spade.behaviour import CyclicBehaviour, OneShotBehaviour
@@ -71,6 +72,28 @@ class AgenteDoente(Agent):
 
             resumo = payload.get("estado") or payload.get("status") or payload.get("nome") or str(payload)
             log(self.agent.nome_doente, f"[STATUS] Atualização recebida ({msg_type}): {resumo}", "CYAN")
+
+            if msg_type == "consultation_scheduled":
+                start_at = payload.get("consultation_start_at")
+                eta = None
+                try:
+                    eta = max(0.0, float(start_at) - time.time())
+                except Exception:
+                    eta = None
+
+                if eta is not None:
+                    log(
+                        self.agent.nome_doente,
+                        f"[AGENDA] Consulta marcada em {eta:.1f}s com médico={payload.get('medico_jid', '?')}",
+                        "GREEN",
+                    )
+                else:
+                    log(
+                        self.agent.nome_doente,
+                        "[AGENDA] Consulta marcada (horário indisponível no payload).",
+                        "GREEN",
+                    )
+                return
 
             if msg_type == "discharge":
                 log(self.agent.nome_doente, "[ALTA] Recebi alta médica! A encerrar agente...", "GREEN")

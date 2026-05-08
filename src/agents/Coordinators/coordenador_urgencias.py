@@ -15,14 +15,12 @@ class CoordenadorUrgencias(Agent):
         cfg = hospital_config or H1_CONFIG
         self.hospital_config = cfg
         self._supervisor = cfg["supervisor"]
-        self._medicos = cfg["medicos"]
-        self._salas = cfg["salas"]
-        self._coord_cons = cfg["coord_cons"]
+        self._medicos = cfg["medicos_consultas_emergency"]
+        self._salas = cfg["salas_consultas_emergency"]
         self._coord_name = str(agent_jid).split("@")[0]
 
         self.pending_urgencies = []
         self.pending_urgency_patient_ids = set()
-        self.preemption_requested_patient_ids = set()
 
     def enqueue_urgency(self, data):
         doente_jid = data.get("doente_jid")
@@ -62,13 +60,6 @@ class CoordenadorUrgencias(Agent):
 
     class EmergencyCoordinatorBehaviour(CyclicBehaviour):
 
-        async def send_routine_unblock(self):
-            gate = Message(to=self.agent._coord_cons)
-            gate.set_metadata("performative", "inform")
-            gate.set_metadata("type", "routine_gate")
-            gate.body = json.dumps({"blocked_specialties": [], "hold": False})
-            await self.send(gate)
-
         async def handle_out_of_band_message(self, msg):
             performative = msg.get_metadata("performative")
             msg_type = msg.get_metadata("type")
@@ -94,20 +85,6 @@ class CoordenadorUrgencias(Agent):
             })
             await self.send(msg)
 
-            blocked_specialties = sorted({
-                p.get("especialidade")
-                for p in self.agent.pending_urgencies
-                if p.get("especialidade")
-            })
-            gate = Message(to=self.agent._coord_cons)
-            gate.set_metadata("performative", "inform")
-            gate.set_metadata("type", "routine_gate")
-            gate.body = json.dumps({
-                "blocked_specialties": blocked_specialties,
-                "hold": len(blocked_specialties) > 0,
-            })
-            await self.send(gate)
-
         async def dispatch_next_emergency(self):
             if not self.agent.pending_urgencies:
                 return False
@@ -116,29 +93,12 @@ class CoordenadorUrgencias(Agent):
             if allocated:
                 removed = self.agent.pending_urgencies.pop(0)
                 self.agent.pending_urgency_patient_ids.discard(removed.get("doente_jid"))
-                self.agent.preemption_requested_patient_ids.discard(removed.get("doente_jid"))
                 await self.publish_waitlist()
-                if not self.agent.pending_urgencies:
-                    await self.send_routine_unblock()
                 return True
             else:
-                doente_jid = patient.get("doente_jid")
-                if doente_jid and doente_jid not in self.agent.preemption_requested_patient_ids:
-                    preempt = Message(to=self.agent._supervisor)
-                    preempt.set_metadata("performative", "request")
-                    preempt.set_metadata("type", "preemption_request")
-                    preempt.body = json.dumps({
-                        "urgente_jid": doente_jid,
-                        "urgente_nome": patient.get("nome", "?"),
-                        "prioridade": patient.get("prioridade"),
-                        "especialidade": patient.get("especialidade"),
-                    })
-                    preempt.thread = doente_jid
-                    await self.send(preempt)
-                    self.agent.preemption_requested_patient_ids.add(doente_jid)
-                    log(self.agent._coord_name,
-                        f"[PREEMPÇÃO] Pedido de preempção enviado ao Supervisor para {patient.get('nome', '?')}.",
-                        "RED")
+                log(self.agent._coord_name,
+                    f"[FILA-URG] Sem recursos de urgência imediatos para {patient.get('nome', '?')}; mantém-se em espera.",
+                    "YELLOW")
                 return False
 
         async def dispatch_emergency_batch(self, max_dispatches=DISPATCH_BATCH_LIMIT):
@@ -172,15 +132,6 @@ class CoordenadorUrgencias(Agent):
                 else:
                     log(self.agent._coord_name,
                         f"[FILA-URG] Pedido duplicado ignorado: {data.get('nome', '?')}", "YELLOW")
-
-            elif performative == "inform" and msg_type == "resources_freed":
-                log(self.agent._coord_name,
-                    "[NOTIFICAÇÃO] Confirmação de preempção recebida do Supervisor.", "GREEN")
-                if self.agent.pending_urgencies:
-                    head = self.agent.pending_urgencies[0].get("doente_jid")
-                    if head:
-                        self.agent.preemption_requested_patient_ids.discard(head)
-                    await self.dispatch_emergency_batch()
 
         async def run_emergency_contract_net(self, patient_data):
             agent = self.agent
