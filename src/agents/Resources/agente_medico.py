@@ -131,7 +131,7 @@ class AgenteMedico(ResourceAgent):
             # If in turno and within hours, routine consultation can be proposed even if ocupado now
             return True
 
-        if not self.disponivel:
+        if cfp_type not in ["exam_cfp", "surgery_cfp", "consultation_cfp"] and not self.disponivel:
             return False
 
         if not self.on_shift:
@@ -148,10 +148,38 @@ class AgenteMedico(ResourceAgent):
             return False
         return True
 
-    def build_proposal_body(self, cfp_type=None) -> dict:
+    def build_proposal_body(self, cfp_type=None, patient_data=None) -> dict:
         slot_at = time.time()
         if cfp_type in ["consultation_cfp", "exam_cfp", "surgery_cfp"]:
             slot_at = max(slot_at, self.next_routine_slot_at)
+
+        preempt_target = None
+        slot_at_urgency = slot_at
+        
+        if patient_data:
+            is_urgent = patient_data.get("tipo_original") != "Normal" and patient_data.get("tipo") != "Normal"
+            if is_urgent and cfp_type in ["exam_cfp", "surgery_cfp"]:
+                my_priority = patient_data.get("prioridade", 999)
+                preemptable_patients = []
+                for k, v in self.agenda.items():
+                    is_routine = v.get("tipo_original") == "Normal" or v.get("tipo") == "Normal"
+                    if cfp_type == "exam_cfp":
+                        v_priority = 999 if is_routine else v.get("prioridade", 0)
+                        if v_priority > my_priority:
+                            preemptable_patients.append(v)
+                    else:
+                        if is_routine:
+                            preemptable_patients.append(v)
+                            
+                if preemptable_patients:
+                    earliest = min(
+                        preemptable_patients, 
+                        key=lambda x: float(x.get("exam_start_at", x.get("surgery_start_at", float('inf'))))
+                    )
+                    start_key = "exam_start_at" if cfp_type == "exam_cfp" else "surgery_start_at"
+                    if start_key in earliest:
+                        preempt_target = earliest.get("doente_jid")
+                        slot_at_urgency = float(earliest[start_key])
 
         profile = self.get_profile()
         is_nurse = profile.get("role") == "nurse"
@@ -163,11 +191,14 @@ class AgenteMedico(ResourceAgent):
             "nome_enfermeiro": self.nome_medico if is_nurse else None,
             "slot": "next_available",
             "slot_at": slot_at,
+            "slot_at_urgency": slot_at_urgency,
+            "preempt_target": preempt_target,
             "weekly_hours_used": self.weekly_hours_used,
             "max_weekly_hours": self.max_weekly_hours,
             "on_shift": self.on_shift,
             "emergency_callable": self.emergency_callable,
             "score": self._compute_score() + (max(0.0, slot_at - time.time()) if cfp_type in ["consultation_cfp", "exam_cfp", "surgery_cfp"] else 0.0),
+            "score_urgency": self._compute_score() + (max(0.0, slot_at_urgency - time.time()) if cfp_type in ["consultation_cfp", "exam_cfp", "surgery_cfp"] else 0.0),
         }
 
     def _compute_score(self) -> float:
@@ -396,6 +427,7 @@ class AgenteMedico(ResourceAgent):
                         "doente_jid": doente_jid,
                         "nome": nome,
                         "solicitante": str(self.agent.jid),
+                        "prioridade": self.patient_data.get("prioridade", 999),
                     })
                     await self.send(msg_int)
                     log(self.agent.nome_medico, f"[CLINICA] {nome} encaminhado para internamento.", "YELLOW")
@@ -474,6 +506,7 @@ class AgenteMedico(ResourceAgent):
                 "doente_jid": doente_jid,
                 "nome": nome,
                 "solicitante": str(self.agent.jid),
+                "prioridade": self.patient_data.get("prioridade", 999),
             })
             msg_int.thread = doente_jid
             await self.send(msg_int)
@@ -688,7 +721,7 @@ class AgenteMedico(ResourceAgent):
                 reply = msg.make_reply()
                 if agent.is_available_for_cfp(cfp_type, data):
                     reply.set_metadata("performative", "propose")
-                    reply.body = json.dumps(agent.build_proposal_body(cfp_type))
+                    reply.body = json.dumps(agent.build_proposal_body(cfp_type, data))
                     log(agent.nome_medico, "[PROPOSAL] Proposal emitted (Status: Available).", "CYAN")
                 else:
                     reply.set_metadata("performative", "reject-proposal")

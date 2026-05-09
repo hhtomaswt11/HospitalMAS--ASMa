@@ -75,13 +75,44 @@ class AgenteSala(ResourceAgent):
                 reply = msg.make_reply()
                 if cfp_type in ["consultation_cfp", "exam_cfp", "surgery_cfp"]:
                     slot_at = max(time.time(), agent.next_routine_slot_at)
+                    
+                    preempt_target = None
+                    slot_at_urgency = slot_at
+                    
+                    is_urgent = data.get("tipo_original") != "Normal" and data.get("tipo") != "Normal"
+                    if is_urgent and cfp_type in ["exam_cfp", "surgery_cfp"]:
+                        my_priority = data.get("prioridade", 999)
+                        preemptable_patients = []
+                        for k, v in agent.agenda.items():
+                            is_routine = v.get("tipo_original") == "Normal" or v.get("tipo") == "Normal"
+                            if cfp_type == "exam_cfp":
+                                v_priority = 999 if is_routine else v.get("prioridade", 0)
+                                if v_priority > my_priority:
+                                    preemptable_patients.append(v)
+                            else:
+                                if is_routine:
+                                    preemptable_patients.append(v)
+                                    
+                        if preemptable_patients:
+                            earliest = min(
+                                preemptable_patients, 
+                                key=lambda x: float(x.get("exam_start_at", x.get("surgery_start_at", float('inf'))))
+                            )
+                            start_key = "exam_start_at" if cfp_type == "exam_cfp" else "surgery_start_at"
+                            if start_key in earliest:
+                                preempt_target = earliest.get("doente_jid")
+                                slot_at_urgency = float(earliest[start_key])
+
                     reply.set_metadata("performative", "propose")
                     reply.body = json.dumps({
                         "sala_jid": str(agent.jid),
                         "nome_sala": agent.nome_sala,
                         "slot": "next_available",
                         "slot_at": slot_at,
+                        "slot_at_urgency": slot_at_urgency,
+                        "preempt_target": preempt_target,
                         "score": max(0.0, slot_at - time.time()),
+                        "score_urgency": max(0.0, slot_at_urgency - time.time()),
                     })
                     log(agent.nome_sala, f"[PROPOSAL] Proposal emitted (slot {cfp_type}).", "MAGENTA")
                 elif agent.disponivel:

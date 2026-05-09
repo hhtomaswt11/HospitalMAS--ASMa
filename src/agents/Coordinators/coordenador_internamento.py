@@ -26,10 +26,16 @@ class CoordenadorInternamento(Agent):
 
     def get_ready_internment_index(self):
         now = time.monotonic()
+        best_idx = None
+        best_priority = float('inf')
+        
         for idx, request in enumerate(self.pending_internments):
             if float(request.get("_next_retry_at", 0.0)) <= now:
-                return idx
-        return None
+                prioridade = request.get("prioridade", 999)
+                if prioridade < best_priority:
+                    best_priority = prioridade
+                    best_idx = idx
+        return best_idx
 
     def schedule_internment_retry(self, data):
         """Aplica backoff exponencial para não repetir CFPs de internamento em ciclo apertado."""

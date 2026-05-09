@@ -38,10 +38,16 @@ class CoordenadorExames(Agent):
 
     def get_ready_exam_index(self):
         now = time.monotonic()
+        best_idx = None
+        best_priority = float('inf')
+        
         for idx, request in enumerate(self.pending_exam_requests):
             if float(request.get("_next_retry_at", 0.0)) <= now:
-                return idx
-        return None
+                prioridade = request.get("prioridade", 999)
+                if prioridade < best_priority:
+                    best_priority = prioridade
+                    best_idx = idx
+        return best_idx
 
     def schedule_exam_retry(self, data):
         retries = int(data.get("_retry_count", 0)) + 1
@@ -253,26 +259,62 @@ class CoordenadorExames(Agent):
             exam_start_at = now
 
             if equipamento_propostas and medico_propostas:
-                def _slot_at(proposta):
-                    slot = proposta.get("slot_at")
+                def _slot_at(proposta, use_urgency=False):
+                    slot = proposta.get("slot_at_urgency" if use_urgency else "slot_at", proposta.get("slot_at"))
                     try:
                         return float(slot)
                     except Exception:
                         return now
 
+                def _score(proposta, use_urgency=False):
+                    return proposta.get("score_urgency" if use_urgency else "score", proposta.get("score", 999))
+
                 best = None
+                is_urgent = patient_data.get("tipo_original") != "Normal" and patient_data.get("tipo") != "Normal"
+
                 for m_prop in medico_propostas:
                     for eq_prop in equipamento_propostas:
                         start_at = max(_slot_at(m_prop), _slot_at(eq_prop))
-                        combined_score = m_prop.get("score", 999) + eq_prop.get("score", 999)
+                        combined_score = _score(m_prop) + _score(eq_prop)
                         key = (start_at, combined_score)
                         if best is None or key < best[0]:
-                            best = (key, m_prop, eq_prop, start_at)
+                            best = (key, m_prop, eq_prop, start_at, None, None)
+                            
+                        if is_urgent:
+                            u_start_at = max(_slot_at(m_prop, True), _slot_at(eq_prop, True))
+                            u_combined_score = _score(m_prop, True) + _score(eq_prop, True)
+                            if u_start_at < start_at:
+                                u_key = (u_start_at, u_combined_score)
+                                preempt_m = m_prop.get("preempt_target")
+                                preempt_eq = eq_prop.get("preempt_target")
+                                if best is None or u_key < best[0]:
+                                    best = (u_key, m_prop, eq_prop, u_start_at, preempt_m, preempt_eq)
 
                 if best:
-                    _, medico_proposta, equipamento_proposta, exam_start_at = best
+                    _, medico_proposta, equipamento_proposta, exam_start_at, preempt_m, preempt_eq = best
 
             if equipamento_proposta and medico_proposta:
+                preempted_set = set()
+                if preempt_m:
+                    cancel_m = Message(to=medico_proposta["medico_jid"])
+                    cancel_m.set_metadata("performative", "cancel")
+                    cancel_m.body = json.dumps({"doente_jid": preempt_m})
+                    cancel_m.thread = preempt_m
+                    await self.send(cancel_m)
+                    if preempt_m not in preempted_set:
+                        self.agent.enqueue_exam_request({"doente_jid": preempt_m, "nome": f"Doente {preempt_m}"})
+                        preempted_set.add(preempt_m)
+                        
+                if preempt_eq:
+                    cancel_eq = Message(to=equipamento_proposta["sala_jid"])
+                    cancel_eq.set_metadata("performative", "cancel")
+                    cancel_eq.body = json.dumps({"doente_jid": preempt_eq})
+                    cancel_eq.thread = preempt_eq
+                    await self.send(cancel_eq)
+                    if preempt_eq not in preempted_set:
+                        self.agent.enqueue_exam_request({"doente_jid": preempt_eq, "nome": f"Doente {preempt_eq}"})
+                        preempted_set.add(preempt_eq)
+
                 acc_eq = Message(to=equipamento_proposta["sala_jid"])
                 acc_eq.set_metadata("performative", "accept-proposal")
                 acc_eq.body = json.dumps({

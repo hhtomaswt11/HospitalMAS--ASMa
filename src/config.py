@@ -179,8 +179,8 @@ SIMULATION_WEEKS = 1
 # Duração real da demonstração. Por defeito fica em 3 minutos para a defesa;
 # se for preciso correr uma semana simulada completa, definir SIMULATION_DURATION=1680 no ambiente.
 SIMULATION_DURATION = 45
-ARRIVAL_RATE_NORMAL = 0.6  # reduzido para a capacidade do hospital
-ARRIVAL_RATE_URGENT = 0.2 # reduzido para a capacidade do hospital
+ARRIVAL_RATE_NORMAL = 1.5  # reduzido para a capacidade do hospital
+ARRIVAL_RATE_URGENT = 0.75 # reduzido para a capacidade do hospital
 
 # Probability that a newly spawned patient is redirected to the central triage agent
 PROB_CENTRAL_TRIAGE = 0.3
