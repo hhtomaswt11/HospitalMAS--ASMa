@@ -41,7 +41,9 @@ class CoordenadorCirurgias(Agent):
         
         for idx, request in enumerate(self.pending_surgery_requests):
             if float(request.get("_next_retry_at", 0.0)) <= now:
-                prioridade = request.get("prioridade", 999)
+                p_val = request.get("prioridade")
+                # Fallback to ROUTINE_SURGERY_PRIORITY if priority is None or missing
+                prioridade = float(p_val) if p_val is not None else float(ROUTINE_SURGERY_PRIORITY)
                 if prioridade < best_priority:
                     best_priority = prioridade
                     best_idx = idx
@@ -279,9 +281,16 @@ class CoordenadorCirurgias(Agent):
                     cancel_m.thread = preempt_m
                     await self.send(cancel_m)
                     if preempt_m not in preempted_set:
-                        self.agent.enqueue_surgery(
-                            {"doente_jid": preempt_m, "nome": f"Doente {preempt_m}"}
-                        )
+                        # Since only routine surgeries are preemptable in the medical agent,
+                        # we can safely re-enqueue with routine priority.
+                        self.agent.enqueue_surgery_request({
+                            "doente_jid": preempt_m,
+                            "nome": f"Doente {preempt_m.split('@')[0]} (Re-agendado)",
+                            "tipo": "Surgery",
+                            "tipo_original": "Normal",
+                            "prioridade": ROUTINE_SURGERY_PRIORITY,
+                            "solicitante": patient_data.get("solicitante"),
+                        })
                         preempted_set.add(preempt_m)
                         
                 if preempt_eq:
@@ -291,9 +300,14 @@ class CoordenadorCirurgias(Agent):
                     cancel_eq.thread = preempt_eq
                     await self.send(cancel_eq)
                     if preempt_eq not in preempted_set:
-                        self.agent.enqueue_surgery(
-                            {"doente_jid": preempt_eq, "nome": f"Doente {preempt_eq}"}
-                        )
+                        self.agent.enqueue_surgery_request({
+                            "doente_jid": preempt_eq,
+                            "nome": f"Doente {preempt_eq.split('@')[0]} (Re-agendado)",
+                            "tipo": "Surgery",
+                            "tipo_original": "Normal",
+                            "prioridade": ROUTINE_SURGERY_PRIORITY,
+                            "solicitante": patient_data.get("solicitante"),
+                        })
                         preempted_set.add(preempt_eq)
 
                 import random

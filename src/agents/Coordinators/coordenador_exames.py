@@ -43,7 +43,9 @@ class CoordenadorExames(Agent):
         
         for idx, request in enumerate(self.pending_exam_requests):
             if float(request.get("_next_retry_at", 0.0)) <= now:
-                prioridade = request.get("prioridade", 999)
+                p_val = request.get("prioridade")
+                # Fallback to ROUTINE_SURGERY_PRIORITY if priority is None or missing
+                prioridade = float(p_val) if p_val is not None else float(ROUTINE_SURGERY_PRIORITY)
                 if prioridade < best_priority:
                     best_priority = prioridade
                     best_idx = idx
@@ -302,7 +304,15 @@ class CoordenadorExames(Agent):
                     cancel_m.thread = preempt_m
                     await self.send(cancel_m)
                     if preempt_m not in preempted_set:
-                        self.agent.enqueue_exam_request({"doente_jid": preempt_m, "nome": f"Doente {preempt_m}"})
+                        self.agent.enqueue_exam_request({
+                            "doente_jid": preempt_m,
+                            "nome": f"Doente {preempt_m.split('@')[0]} (Re-agendado)",
+                            "tipo": "Exam",
+                            "tipo_original": "Normal",
+                            "especialidade": exam_specialty,
+                            "prioridade": ROUTINE_SURGERY_PRIORITY,
+                            "solicitante": patient_data.get("solicitante"),
+                        })
                         preempted_set.add(preempt_m)
                         
                 if preempt_eq:
@@ -312,7 +322,15 @@ class CoordenadorExames(Agent):
                     cancel_eq.thread = preempt_eq
                     await self.send(cancel_eq)
                     if preempt_eq not in preempted_set:
-                        self.agent.enqueue_exam_request({"doente_jid": preempt_eq, "nome": f"Doente {preempt_eq}"})
+                        self.agent.enqueue_exam_request({
+                            "doente_jid": preempt_eq,
+                            "nome": f"Doente {preempt_eq.split('@')[0]} (Re-agendado)",
+                            "tipo": "Exam",
+                            "tipo_original": "Normal",
+                            "especialidade": exam_specialty,
+                            "prioridade": ROUTINE_SURGERY_PRIORITY,
+                            "solicitante": patient_data.get("solicitante"),
+                        })
                         preempted_set.add(preempt_eq)
 
                 acc_eq = Message(to=equipamento_proposta["sala_jid"])

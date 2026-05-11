@@ -96,7 +96,7 @@ class AgenteTriagem(ResourceAgent):
                     log(self.agent.nome_medico,
                         f"[TRIAGEM] Proposta enviada para {data.get('nome', '?')}.", "YELLOW")
                 else:
-                    reply.set_metadata("performative", "reject-proposal")
+                    reply.set_metadata("performative", "refuse")
                     reply.body = json.dumps({
                         "medico_jid": str(self.agent.jid),
                         "motivo": "Triagem ocupada.",

@@ -35,38 +35,10 @@ class AgenteEnfermeiro(ResourceAgent):
         self.role = "nurse"
         self.max_weekly_hours = WEEKLY_MAX_HOURS
         self.weekly_hours_used = 0.0
-        # Arranque alinhado por defeito com 08h00 simuladas, para evitar a oscilação inicial
-        # dos turnos antes de o main_sim sincronizar os relógios globais.
-        self._sim_start_time = time.time() - (8 * SIM_HOUR_SECONDS)
-        profile = AGENT_REGISTRY.get(str(agent_jid), {})
-        self._shift_type = profile.get("shift", "morning")
-        self.on_shift = self.compute_shift_state()
         self.current_assignment_type = None
 
     def get_resource_name(self):
         return self.nome_enfermeiro
-
-    def compute_shift_state(self) -> bool:
-        """Calcula se o enfermeiro deve estar em turno no instante simulado atual."""
-        elapsed = time.time() - self._sim_start_time
-        dia_simulado_s = elapsed % SIM_DAY_SECONDS
-        if self._shift_type == "morning":
-            return 8 * SIM_HOUR_SECONDS <= dia_simulado_s < 16 * SIM_HOUR_SECONDS
-        if self._shift_type == "afternoon":
-            return 16 * SIM_HOUR_SECONDS <= dia_simulado_s < 24 * SIM_HOUR_SECONDS
-        return 0 <= dia_simulado_s < 8 * SIM_HOUR_SECONDS
-
-    def sync_shift_state(self, log_change: bool = True) -> bool:
-        """Sincroniza imediatamente o estado de turno após ajuste do relógio simulado."""
-        should_be_on_shift = self.compute_shift_state()
-        changed = should_be_on_shift != self.on_shift
-        self.on_shift = should_be_on_shift
-        if changed and log_change:
-            estado = "ENTROU em turno" if should_be_on_shift else "SAIU do turno"
-            log(self.nome_enfermeiro,
-                f"[ESCALA] {self.nome_enfermeiro} {estado} (turno={self._shift_type}).",
-                "YELLOW")
-        return changed
 
     def add_hours(self, procedure_type: str):
         hours = PROCEDURE_HOURS.get(procedure_type, 2)
@@ -125,25 +97,6 @@ class AgenteEnfermeiro(ResourceAgent):
                 f"[ENFERMAGEM] Internamento de {nome} concluído. "
                 f"Enfermeiro/a e quarto libertados.", "GREEN")
 
-    class ShiftRotationBehaviour(PeriodicBehaviour):
-        """Alterna o turno do enfermeiro."""
-        async def run(self):
-            agent = self.agent
-            if agent.sync_shift_state(log_change=True):
-                await agent.send_status(self)
-
-    class WeeklyResetBehaviour(PeriodicBehaviour):
-        """Reseta a carga horária semanal."""
-        async def run(self):
-            agent = self.agent
-            elapsed = time.time() - agent._sim_start_time
-            current_week = int(elapsed // SIM_WEEK_SECONDS)
-            if current_week > getattr(agent, 'last_week_reset', 0):
-                agent.last_week_reset = current_week
-                agent.weekly_hours_used = 0
-                log(agent.nome_enfermeiro, f"[RESET SEMANAL] {agent.nome_enfermeiro} reiniciou as suas {agent.max_weekly_hours}h semanais.", "MAGENTA")
-                await agent.send_status(self)
-
     class HandleProposalsBehaviour(CyclicBehaviour):
         async def run(self):
             msg = await self.receive(timeout=RESOURCE_RECEIVE_TIMEOUT_SECONDS)
@@ -179,7 +132,7 @@ class AgenteEnfermeiro(ResourceAgent):
                         reason = "limite horário atingido"
                     else:
                         reason = "ocupado/a"
-                    reply.set_metadata("performative", "reject-proposal")
+                    reply.set_metadata("performative", "refuse")
                     reply.body = json.dumps({
                         "enfermeiro_jid": str(agent.jid),
                         "motivo": reason,

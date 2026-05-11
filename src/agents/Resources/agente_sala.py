@@ -125,7 +125,7 @@ class AgenteSala(ResourceAgent):
                     })
                     log(agent.nome_sala, "[PROPOSAL] Proposal emitted (Status: Available).", "MAGENTA")
                 else:
-                    reply.set_metadata("performative", "reject-proposal")
+                    reply.set_metadata("performative", "refuse")
                     reply.body = json.dumps({
                         "sala_jid": str(agent.jid),
                         "motivo": "Room occupied logically.",
@@ -179,8 +179,8 @@ class AgenteSala(ResourceAgent):
                     agent.agenda.pop(doente_jid)
                     log(agent.nome_sala, f"[AGENDA] Reserva de sala para {doente_jid} cancelada.", "RED")
 
-                # Only allow preemption for specific procedure types (exams/surgeries)
-                allowed_preempt_types = {"exam", "surgery"}
+                # Allow preemption for future reservations and active exams/surgeries.
+                allowed_preempt_types = {"exam", "surgery", "reserved"}
                 current = getattr(agent, "current_assignment_type", None)
                 if current in allowed_preempt_types:
                     prev = agent.paciente_atual

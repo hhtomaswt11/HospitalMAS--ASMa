@@ -185,6 +185,26 @@ class CoordenadorTriagem(Agent):
                 acc_s.thread = doente_jid
                 await self.send(acc_s)
 
+                for proposta in medico_propostas:
+                    m_jid = proposta.get("medico_jid")
+                    if not m_jid or m_jid == medico_proposta["medico_jid"]:
+                        continue
+                    rej = Message(to=m_jid)
+                    rej.set_metadata("performative", "reject-proposal")
+                    rej.body = json.dumps({"motivo": "Proposta não selecionada", "doente_jid": doente_jid})
+                    rej.thread = doente_jid
+                    await self.send(rej)
+
+                for proposta in sala_propostas:
+                    s_jid = proposta.get("sala_jid")
+                    if not s_jid or s_jid == sala_proposta["sala_jid"]:
+                        continue
+                    rej = Message(to=s_jid)
+                    rej.set_metadata("performative", "reject-proposal")
+                    rej.body = json.dumps({"motivo": "Proposta não selecionada", "doente_jid": doente_jid})
+                    rej.thread = doente_jid
+                    await self.send(rej)
+
                 log(agent._coord_name, f"[TRIAGEM] Triagem alocada para {nome}.", "YELLOW")
                 return True
 
