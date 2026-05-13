@@ -30,7 +30,7 @@ class AgenteTriagemGeral(Agent):
         # Per-patient queues: doente_jid -> asyncio.Queue of load_response dicts
         self.pending_load_responses: dict = {}
         import time
-        self._sim_start_time = time.time()
+        self._sim_start_time = time.time() - (8 * SIM_HOUR_SECONDS)
 
     class DiagnoseAndRouteBehaviour(OneShotBehaviour):
         """One-shot behaviour launched per patient arrival."""
@@ -142,7 +142,12 @@ class AgenteTriagemGeral(Agent):
                 # 1. Primary: specialty_load (bottleneck for this specific patient)
                 # 2. Secondary: total_load (overall hospital congestion)
                 best = min(responses, key=lambda r: (r.get("specialty_load", 999), r.get("total_load", 999)))
-                best_metric = f"spec={best.get('specialty_load', '?')}, total={best.get('total_load', '?')}"
+                best_metric = (
+                    f"spec={best.get('specialty_load', '?')} "
+                    f"(fila={best.get('pending_specialty_load', '?')}, agenda={best.get('scheduled_specialty_load', '?')}), "
+                    f"total={best.get('total_load', '?')} "
+                    f"(fila={best.get('pending_total_load', '?')}, agenda={best.get('scheduled_total_load', '?')})"
+                )
 
                 # Map the responding supervisor back to its hospital_config
                 responding_jid = best.get("supervisor_jid", "")

@@ -84,7 +84,12 @@ class AgenteDoente(Agent):
                 if eta is not None:
                     log(
                         self.agent.nome_doente,
-                        f"[AGENDA] Consulta marcada em {eta:.1f}s com médico={payload.get('medico_jid', '?')}",
+                        f"[AGENDA] Consulta de rotina marcada | médico={payload.get('medico_nome', payload.get('medico_jid', '?'))} | "
+                        f"sala={payload.get('sala_nome', payload.get('sala_jid', '?'))} | "
+                        f"especialidade={payload.get('especialidade', '?')} | "
+                        f"início={payload.get('hora_inicio_marcada', '?')} | "
+                        f"fim previsto={payload.get('hora_fim_prevista', '?')} | "
+                        f"ETA={eta:.1f}s | Estado={payload.get('estado', 'agendada')}",
                         "GREEN",
                     )
                 else:

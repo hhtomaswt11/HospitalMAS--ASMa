@@ -1,139 +1,103 @@
 # Mapa de Fluxos de Interação
 
-### Fluxo de Rotina (consulta normal)
+Este documento descreve os fluxos principais da simulação hospitalar multiagente. A lógica atual separa rigidamente consultas de rotina e consultas de urgência, mantendo prioridade/preempção apenas nos fluxos de exames e cirurgias.
 
-1. Doente envia pedido:
-   - `AgenteDoente` -> `COORD_CONS`
-   - `performative=request`, `type=patient_request`
-   - Referência: `src/agents/Resources/agente_doente.py:46`
+## 1. Fluxo de consultas de rotina
 
-2. Coordenador de consultas processa fila e inicia Contract-Net:
-   - Publica fila (`waitlist_update`) para supervisor.
-   - Envia CFP para médicos compatíveis e salas.
-   - Referências: `src/agents/Coordinators/coordenador_consultas.py:86`, `src/agents/Coordinators/coordenador_consultas.py:232`
+1. O `AgenteDoente` normal envia `request/patient_request` para o `CoordenadorConsultas` do hospital escolhido.
+2. O coordenador coloca o pedido na fila de rotina, agrupada por especialidade.
+3. O coordenador consulta a agenda centralizada de rotina e considera apenas:
+   - médicos de rotina (`consult_mode = routine`);
+   - salas de rotina (`category = routine`).
+4. Para cada par médico+sala compatível, o coordenador procura o primeiro slot futuro livre que respeite simultaneamente:
+   - turno real do médico;
+   - horário administrativo das consultas de rotina;
+   - disponibilidade futura do médico;
+   - disponibilidade futura da sala;
+   - ausência de sobreposição.
+5. O coordenador escolhe o par com consulta mais cedo e, em empate, distribui a carga por médicos/salas com menos marcações ativas.
+6. A reserva fica inicialmente em estado `reservada` na agenda central.
+7. O coordenador envia `accept-proposal/type=consultation_schedule` ao médico e à sala apenas para confirmar a reserva escolhida.
+8. Médico e sala registam a reserva localmente e respondem com `inform/type=reservation_confirmed`.
+9. Só depois das duas confirmações o coordenador muda o estado para `agendada` e envia ao doente `inform/type=consultation_scheduled` com médico, sala, especialidade, hora marcada e hora prevista de fim.
+10. No horário marcado, médico e sala iniciam a consulta. A consulta clínica dura 15 minutos simulados, mas os slots são espaçados de 20 minutos para dar folga operacional entre marcações.
 
-3. Recursos respondem:
-   - `AgenteMedico`/`AgenteSala` respondem `propose` ou `reject-proposal`.
-   - Referências: `src/agents/Resources/agente_medico.py:266`, `src/agents/Resources/agente_sala.py:31`
+Notas importantes:
 
-4. Adjudicação:
-   - Coordenador envia `accept-proposal` para médico e sala.
-   - Referência: `src/agents/Coordinators/coordenador_consultas.py:291`
+- Este fluxo já não usa Contract Net clássico para escolher recursos por disponibilidade “agora”; usa agenda de slots futuros.
+- Urgências não interrompem consultas de rotina.
+- Médicos de urgência não fazem rotina.
+- Salas de urgência não recebem rotina.
+- O mesmo médico/sala pode ter várias marcações futuras, porque a agenda usa slots e não uma reserva única bloqueante.
+- Se médico ou sala não confirmarem a reserva dentro do timeout, a reserva tentativa é cancelada e o pedido permanece pendente para nova tentativa.
 
-5. Execução clínica:
-   - Médico executa avaliação, pode dar alta, pedir exame, cirurgia ou internamento (dependendo do caso/probabilidades).
-   - Referência: `src/agents/Resources/agente_medico.py:291`
+## 2. Fluxo de urgência com triagem
 
-### Fluxo de Urgência com Triagem
+1. O `AgenteDoente` urgente envia pedido para o coordenador de triagem local.
+2. O coordenador de triagem usa Contract Net com médicos/salas de triagem.
+3. O agente de triagem classifica a gravidade e envia `request/triaged_patient` para `CoordenadorUrgencias`.
+4. O coordenador de urgências insere o doente numa fila ordenada por prioridade clínica/gravity/severity.
+5. O coordenador inicia Contract Net apenas com:
+   - médicos de urgência (`consult_mode = emergency`);
+   - salas de urgência (`category = emergency`).
+6. O doente urgente não recebe horário fixo: é atendido assim que houver recurso adequado, respeitando a prioridade da fila.
 
-1. Doente urgente envia pedido:
-   - `AgenteDoente` -> `COORD_TRI`
-   - `request/patient_request`
-   - Referência: `src/agents/Resources/agente_doente.py:40`
+Notas importantes:
 
-2. Coordenador de triagem:
-   - Mantém fila de triagem.
-   - Contract-Net com médicos de triagem + salas de triagem.
-   - Referências: `src/agents/Coordinators/coordenador_triagem.py:28`, `src/agents/Coordinators/coordenador_triagem.py:67`
+- A urgência não usa médicos nem salas de rotina.
+- A urgência não cancela nem preempta consultas de rotina.
+- Pode existir chamada extraordinária de médicos de urgência fora do turno se a configuração o permitir.
 
-3. Agente de triagem classifica:
-   - Envia `request/triaged_patient` para `COORD_URG`.
-   - Envia `inform/emergency_alert` para `SUPERVISOR`.
-   - Referências: `src/agents/Resources/agente_triagem.py:43`, `src/agents/Resources/agente_triagem.py:56`
+## 3. Exames/MCDT
 
-4. Coordenador de urgências:
-   - Atualiza fila de urgências.
-   - Fecha gate da rotina (`routine_gate: hold=true`) para `COORD_CONS`.
-   - Aguarda `resources_freed` do supervisor para despachar próximo urgente.
-   - Referências: `src/agents/Coordinators/coordenador_urgencias.py:47`, `src/agents/Coordinators/coordenador_urgencias.py:57`, `src/agents/Coordinators/coordenador_urgencias.py:96`
+1. Após uma consulta ou urgência, o médico pode pedir exame ao `CoordenadorExames`.
+2. O coordenador seleciona recursos compatíveis por especialidade: médico de exame e sala/equipamento especializado.
+3. O fluxo mantém lógica de prioridade para casos urgentes.
+4. Se existir preempção, ela só deve afetar reservas/execuções de exames, nunca consultas de rotina.
+5. O médico solicitante aguarda `exam_result` real antes de continuar a decisão clínica.
 
-### Fluxo de Preempção
+## 4. Cirurgias
 
-1. Supervisor recebe alerta:
-   - `inform/emergency_alert`
-   - Referência: `src/agents/supervisor.py:121`
+1. Após exame ou decisão clínica, o médico pode pedir cirurgia ao `CoordenadorCirurgias`.
+2. O coordenador negocia com cirurgiões e blocos operatórios.
+3. Casos urgentes podem manter prioridade/preempção.
+4. A preempção cirúrgica fica limitada ao fluxo de cirurgia e não deve cancelar consultas de rotina.
+5. O médico solicitante aguarda `surgery_result` real.
 
-2. Supervisor ordena preempção:
-   - `request/preemption_order` para `COORD_CONS`
-   - Referência: `src/agents/supervisor.py:139`
+## 5. Internamento
 
-3. Coordenador de consultas cancela alocação de rotina:
-   - Envia `cancel/preemption_cancel` para médico e sala.
-   - Reencola doente preemptado na fila de rotina.
-   - Referências: `src/agents/Coordinators/coordenador_consultas.py:358`, `src/agents/Coordinators/coordenador_consultas.py:369`, `src/agents/Coordinators/coordenador_consultas.py:393`
+1. O médico pede internamento ao `CoordenadorInternamento` quando aplicável.
+2. O coordenador usa Contract Net com quartos/camas e equipa de enfermagem.
+3. Se o internamento falhar por indisponibilidade persistente, é enviada resposta explícita para evitar doentes bloqueados.
+4. No fim, o recurso é libertado e o doente recebe alta/observação conforme o fluxo clínico.
 
-4. Recursos libertam e respondem:
-   - Médico/Sala tratam `cancel` e enviam `inform/cancel_confirmed`.
-   - Referências: `src/agents/Resources/agente_medico.py:342`, `src/agents/Resources/agente_sala.py:75`
+## 6. Supervisor e dashboard
 
-5. Coordenador de consultas notifica supervisor:
-   - `inform/preemption_done`
-   - Referência: `src/agents/Coordinators/coordenador_consultas.py:400`
+O supervisor recebe e agrega:
 
-6. Supervisor libera urgências:
-   - Envia `inform/resources_freed` para `COORD_URG`
-   - Referência: `src/agents/supervisor.py:157`
+- `resource_status` dos recursos;
+- `waitlist_update` dos coordenadores;
+- consultas de rotina pendentes e consultas já agendadas/em curso;
+- logs operacionais;
+- estado de filas, recursos ocupados e recursos livres.
 
-### 2.4 Fluxo de Exames
+Nas respostas `load_query` enviadas à triagem central, o supervisor calcula a carga de rotina como:
 
-1. Médico solicita exame:
-   - `request/exam_request` para `COORD_EXAM`
-   - Referência: `src/agents/Resources/agente_medico.py:85`
+```text
+carga = doentes pendentes em fila + consultas futuras/agendadas/em curso
+```
 
-2. Coordenador de exames:
-   - Seleciona equipamentos e médicos de exame por especialidade.
-   - Contract-Net e adjudicação.
-   - Referências: `src/agents/Coordinators/coordenador_exames.py:15`, `src/agents/Coordinators/coordenador_exames.py:53`
+Isto é feito por especialidade e no total, evitando que um hospital pareça livre apenas porque já transformou a fila numa agenda futura muito preenchida.
 
-3. Confirmação de alocação ao solicitante:
-   - `inform/allocation_confirmed` (`procedure=exam`)
-   - Referência: `src/agents/Coordinators/coordenador_exames.py:157`
+O dashboard mostra a separação entre consultórios de rotina e urgência, estado dos recursos, tipo/função dos médicos e carga semanal trabalhada em relação às 40 horas.
 
-### Fluxo de Cirurgia
+## 7. Afluência variável
 
-1. Médico solicita cirurgia:
-   - `request/surgery_request` para `COORD_CIR`
-   - Referência: `src/agents/Resources/agente_medico.py:115`
+O gerador de doentes usa perfis horários configuráveis em `src/config.py`:
 
-2. Coordenador de cirurgias:
-   - Contract-Net com blocos + cirurgiões.
-   - Referência: `src/agents/Coordinators/coordenador_cirurgias.py:35`
+- maior afluência de manhã, sobretudo perto das 08h-10h;
+- menor afluência a meio do dia;
+- afluência normal/alta à tarde;
+- períodos mais calmos ao fim do dia/noite.
 
-3. Confirmação ao solicitante:
-   - `inform/allocation_confirmed` (`procedure=surgery`)
-   - Referência: `src/agents/Coordinators/coordenador_cirurgias.py:132`
-
-### Fluxo de Internamento
-
-1. Pedido de internamento:
-   - `request/internment_request` para `COORD_INT`
-   - Referências: `src/agents/Resources/agente_medico.py:170`, `src/agents/Resources/agente_medico.py:226`
-
-2. Coordenador de internamento:
-   - Contract-Net com quartos de internamento.
-   - Referência: `src/agents/Coordinators/coordenador_internamento.py:68`
-
-3. Conclusão:
-   - Médico envia `inform/internment_finished` para coordenador.
-   - Referência: `src/agents/Resources/agente_medico.py:256`
-
----
-
-## Observabilidade e Estado Global
-
-Supervisor centraliza:
-- Estado de recursos via `resource_status`.
-- Filas via `waitlist_update`.
-- Alertas de urgência/preempção.
-
-Referências:
-- `src/agents/supervisor.py:71`
-- `src/agents/supervisor.py:107`
-- `src/agents/supervisor.py:121`
-- `src/agents/supervisor.py:149`
-
-Persistência:
-- `data/dashboard.json`
-- `data/log_supervisor.txt`
-
-
+Não foi implementado um sistema de centros de saúde, porque ficou fora do âmbito útil indicado pelo professor.

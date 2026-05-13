@@ -14,7 +14,7 @@ O sistema modela um ambiente hospitalar onde diferentes agentes comunicam por me
 - **Agentes de recursos**: médicos, médicos de triagem, enfermeiros, salas, equipamentos, blocos operatórios e quartos/camas de internamento.
 - **Supervisores**: recolhem estado dos hospitais e alimentam os ficheiros usados pelo dashboard.
 
-A arquitetura segue uma lógica descentralizada: os coordenadores não executam diretamente os atos clínicos; negoceiam com recursos disponíveis através de uma lógica próxima do protocolo **FIPA Contract Net**.
+A arquitetura segue uma lógica descentralizada: os coordenadores não executam diretamente os atos clínicos. Nos fluxos de urgência, exames, cirurgias, triagem e internamento usam uma lógica próxima do protocolo **FIPA Contract Net**. Nas consultas de rotina, por exigência de realismo da agenda, o coordenador usa uma **agenda centralizada de slots futuros** e só confirma a marcação ao doente depois de receber confirmação explícita do médico e da sala.
 
 ## 2. Estrutura atual do projeto
 
@@ -27,6 +27,7 @@ ASMa-25_26/
 ├── FLUXOS_AGENTES.md                   # Descrição dos fluxos entre agentes
 ├── src/
 │   ├── config.py                       # Configuração geral, JIDs, tempos, probabilidades e registry
+│   ├── scheduling.py                   # Helpers de agenda, turnos, slots e validação temporal
 │   ├── patch.py                        # Patch de compatibilidade XMPP/SPADE
 │   └── agents/
 │       ├── agente_triagem_geral.py     # Triagem central multi-hospital
@@ -112,8 +113,10 @@ A simulação arranca os dois hospitais, a triagem central, os supervisores, os 
 Por defeito, a duração está configurada para demonstração curta:
 
 ```text
-SIMULATION_DURATION=180 segundos
+SIMULATION_DURATION=45 segundos
 ```
+
+Este valor pode ser alterado por variável de ambiente, sem mexer no código.
 
 Para executar durante mais tempo, podes definir a variável antes de correr:
 
@@ -157,33 +160,62 @@ python3 main_sim.py
 
 ### 7.1 Consultas de rotina
 
-Pacientes normais entram diretamente no hospital ou passam pela triagem central. As consultas de rotina respeitam a janela administrativa configurada:
+Pacientes normais entram diretamente no hospital ou passam pela triagem central. Quando chegam ao fluxo de rotina, o `CoordenadorConsultas` coloca o pedido na fila por especialidade e tenta associá-lo rapidamente a uma marcação concreta com:
+
+- médico de rotina;
+- sala/consultório de rotina;
+- especialidade;
+- hora marcada de início;
+- hora prevista de fim;
+- estado da consulta.
+
+Nesta versão, as consultas de rotina **não dependem da disponibilidade “agora”** do médico/sala nem usam Contract Net clássico para escolher propostas momentâneas. O coordenador consulta uma agenda centralizada, procura o primeiro par médico+sala com slot futuro válido e valida simultaneamente:
+
+- turno real do médico;
+- janela administrativa das consultas de rotina;
+- disponibilidade futura do médico;
+- disponibilidade futura da sala;
+- ausência de sobreposição.
+
+A consulta clínica continua a durar 15 minutos simulados (`CONSULTATION_DURATION_NORMAL_SECONDS`), mas os slots são espaçados de 20 minutos (`CONSULTATION_SLOT_MINUTES = 20`). Esta folga reduz atrasos provocados por mensagens assíncronas e libertação de recursos, mantendo o comportamento realista.
+
+Após escolher o slot, o coordenador faz uma reserva tentativa e envia a marcação ao médico e à sala. O doente só recebe `consultation_scheduled` depois de ambos os recursos responderem com `reservation_confirmed`. Se alguma confirmação falhar, a reserva tentativa é cancelada e o pedido permanece na fila para nova tentativa.
+
+A janela administrativa configurada é:
 
 ```text
 08h00–20h00 simuladas
 ```
 
-Fora desse período, a triagem central envia uma alta administrativa ao doente caso ainda não tenha sido encaminhado.
+Fora desse período, a triagem central envia uma alta administrativa ao doente caso ainda não tenha sido encaminhado. Urgências não interrompem nem cancelam consultas de rotina.
 
 ### 7.2 Urgências
 
-Pacientes urgentes são encaminhados para triagem local e urgência. O sistema atribui prioridade clínica e tenta alocar médico/sala adequados. A urgência pode acionar chamada extraordinária de médicos fora do turno quando permitido pela configuração.
+Pacientes urgentes são encaminhados para triagem local e urgência. O sistema atribui prioridade clínica e mantém a fila ordenada por gravidade/prioridade. As urgências:
+
+- não têm horário fixo de consulta;
+- usam apenas médicos classificados como urgência;
+- usam apenas salas classificadas como urgência;
+- não preemptam consultas de rotina;
+- podem acionar chamada extraordinária de médicos de urgência fora do turno quando permitido pela configuração.
 
 ### 7.3 Triagem central multi-hospital
 
 A triagem central preserva o `tipo_original` do doente, distinguindo corretamente pacientes normais e urgentes mesmo quando entram pela via central. Depois consulta os supervisores dos hospitais e encaminha o paciente para o hospital com menor carga relevante.
 
+Para consultas de rotina, a carga já não corresponde apenas à fila pendente. O supervisor considera também as consultas futuras já agendadas/em curso, por especialidade e no total. Assim, um hospital que esvaziou a fila à custa de uma agenda futura muito cheia continua a aparecer como carregado na triagem central.
+
 ### 7.4 Exames/MCDT
 
 Quando um médico pede exame, o pedido passa pelo coordenador de exames. O coordenador usa Contract Net para escolher equipamento e médico por disponibilidade, especialidade e `score`. O médico solicitante aguarda um `exam_result` real. Se o exame falhar por indisponibilidade persistente, é enviada uma resposta explícita de falha.
 
-Exames já não são bloqueados pela janela administrativa das consultas de rotina; dependem da escala, especialidade e disponibilidade dos recursos.
+Exames já não são bloqueados pela janela administrativa das consultas de rotina; dependem da escala, especialidade e disponibilidade dos recursos. A lógica de prioridade/preempção fica limitada a exames e cirurgias, não contaminando as consultas.
 
 ### 7.5 Cirurgias
 
 Quando um exame recomenda cirurgia, o médico solicitante pede intervenção ao coordenador de cirurgias e aguarda um `surgery_result` real. O coordenador de cirurgias usa fila com backoff e limite de tentativas para evitar repetição constante de falhas.
 
-Cirurgias também não são bloqueadas pela janela administrativa das consultas de rotina; dependem da escala cirúrgica, bloco disponível e cirurgião adequado.
+Cirurgias também não são bloqueadas pela janela administrativa das consultas de rotina; dependem da escala cirúrgica, bloco disponível e cirurgião adequado. Tal como nos exames, podem manter prioridade/preempção para casos urgentes.
 
 ### 7.6 Internamento
 
@@ -191,7 +223,15 @@ O internamento é coordenado por fila com backoff, limite de tentativas e aloca�
 
 ## 8. Estratégia de alocação
 
-Os coordenadores usam uma estratégia inspirada no **FIPA Contract Net**:
+A estratégia de alocação é híbrida:
+
+### Consultas de rotina
+
+As consultas de rotina usam agenda centralizada no `CoordenadorConsultas`. O algoritmo procura o primeiro slot futuro válido para médico+sala dentro do turno e da janela 08h–20h. A reserva fica inicialmente em estado `reservada`; só passa a `agendada` depois das confirmações explícitas do médico e da sala.
+
+### Urgências, exames, cirurgias, triagem e internamento
+
+Os restantes fluxos usam uma estratégia inspirada no **FIPA Contract Net**:
 
 1. o coordenador envia um CFP aos recursos candidatos;
 2. os recursos disponíveis respondem com proposta;
@@ -199,7 +239,7 @@ Os coordenadores usam uma estratégia inspirada no **FIPA Contract Net**:
 4. o coordenador escolhe a melhor proposta, privilegiando menor carga/maior disponibilidade;
 5. o recurso selecionado executa o ato e liberta-se no fim.
 
-Isto aplica-se a consultas, urgências, exames, cirurgias, triagem e internamento.
+A preempção fica limitada a exames e cirurgias. Consultas de rotina não são preemptáveis.
 
 ## 9. Configurações úteis
 
@@ -207,14 +247,31 @@ As principais constantes estão em `src/config.py`:
 
 ```text
 SIMULATION_DURATION              duração real da simulação
-ARRIVAL_RATE_NORMAL              probabilidade/ritmo de chegada de pacientes normais
-ARRIVAL_RATE_URGENT              probabilidade/ritmo de chegada de pacientes urgentes
+ARRIVAL_RATE_NORMAL              taxa base de chegada de pacientes normais
+ARRIVAL_RATE_URGENT              taxa base de chegada de pacientes urgentes
+ARRIVAL_PROFILE_NORMAL           multiplicadores por período horário para rotina
+ARRIVAL_PROFILE_URGENT           multiplicadores por período horário para urgência
 PROB_CENTRAL_TRIAGE              probabilidade de entrada pela triagem central
 ROUTINE_START_H / ROUTINE_END_H  janela das consultas de rotina
+CONSULTATION_SLOT_MINUTES        espaçamento entre slots de rotina
+CONSULTATION_DURATION_NORMAL_SECONDS duração clínica da consulta de rotina
+ROUTINE_DISPATCH_BATCH_LIMIT     máximo de pedidos de rotina despachados por ciclo
+DISPATCH_BATCH_LIMIT             limite-base dos restantes coordenadores
+ROUTINE_RESERVATION_CONFIRM_TIMEOUT_SECONDS tempo máximo para confirmar médico+sala
 EXAM_MAX_RETRIES                 limite de tentativas para exames
 SURGERY_MAX_RETRIES              limite de tentativas para cirurgias
 INTERNMENT_MAX_RETRIES           limite de tentativas para internamento
 ```
+
+
+
+### Afluência variável
+
+As chegadas deixaram de ser lineares. O gerador usa `arrival_rate_for_hour()` e os perfis `ARRIVAL_PROFILE_NORMAL` / `ARRIVAL_PROFILE_URGENT`, configurados em `src/config.py`, para simular picos de manhã, períodos mais calmos a meio do dia e variação ao fim da tarde/noite. Não foi implementado o sistema de centros de saúde, por decisão de âmbito.
+
+### Separação de recursos
+
+Os médicos e salas estão classificados por função no `AGENT_REGISTRY`. Nas consultas de rotina, o coordenador escolhe diretamente apenas médicos `consult_mode="routine"` e salas `category="routine"` através da agenda centralizada. Nas urgências, só são consultados médicos `consult_mode="emergency"` e salas `category="emergency"`. As salas continuam a validar a sua categoria antes de responder a propostas nos fluxos que usam Contract Net.
 
 ## 10. Logs e outputs
 

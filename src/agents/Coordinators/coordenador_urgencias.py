@@ -21,6 +21,10 @@ class CoordenadorUrgencias(Agent):
 
         self.pending_urgencies = []
         self.pending_urgency_patient_ids = set()
+        # Doentes já alocados a uma consulta de urgência.
+        # Evita realocações duplicadas quando chegam mensagens/replies tardias
+        # de tentativas Contract-Net anteriores.
+        self.allocated_urgency_patient_ids = set()
 
     def enqueue_urgency(self, data):
         doente_jid = data.get("doente_jid")
@@ -28,10 +32,24 @@ class CoordenadorUrgencias(Agent):
             return False
         if doente_jid in self.pending_urgency_patient_ids:
             return False
+        if doente_jid in self.allocated_urgency_patient_ids:
+            return False
         self.pending_urgencies.append(data)
         self.pending_urgency_patient_ids.add(doente_jid)
         self.pending_urgencies.sort(key=lambda p: p.get("prioridade", URGENT_PRIORITY_MAX))
         return True
+
+    def remove_pending_urgency(self, doente_jid):
+        """Remove da fila o doente realmente alocado, mesmo que a fila
+        tenha sido reordenada por prioridades enquanto a negociação decorria.
+        """
+        for idx, patient in enumerate(list(self.pending_urgencies)):
+            if patient.get("doente_jid") == doente_jid:
+                removed = self.pending_urgencies.pop(idx)
+                self.pending_urgency_patient_ids.discard(removed.get("doente_jid"))
+                return removed
+        self.pending_urgency_patient_ids.discard(doente_jid)
+        return None
 
     def get_emergency_waitlist(self):
         return [
@@ -91,8 +109,13 @@ class CoordenadorUrgencias(Agent):
             patient = self.agent.pending_urgencies[0]
             allocated = await self.run_emergency_contract_net(patient)
             if allocated:
-                removed = self.agent.pending_urgencies.pop(0)
-                self.agent.pending_urgency_patient_ids.discard(removed.get("doente_jid"))
+                removed = self.agent.remove_pending_urgency(patient.get("doente_jid"))
+                self.agent.allocated_urgency_patient_ids.add(patient.get("doente_jid"))
+                if removed is None:
+                    log(self.agent._coord_name,
+                        f"[FILA-URG] Alocação concluída para {patient.get('nome', '?')}, "
+                        "mas o pedido já não estava na cabeça da fila; remoção por JID aplicada.",
+                        "YELLOW")
                 await self.publish_waitlist()
                 return True
             else:
@@ -144,6 +167,7 @@ class CoordenadorUrgencias(Agent):
                 for m_jid in agent._medicos
                 if AGENT_REGISTRY.get(m_jid, {}).get("zone") == "normal"
                 and AGENT_REGISTRY.get(m_jid, {}).get("specialty") == requested_specialty
+                and AGENT_REGISTRY.get(m_jid, {}).get("consult_mode") == "emergency"
             ]
 
             if not medicos_candidatos:
@@ -152,20 +176,29 @@ class CoordenadorUrgencias(Agent):
                     "YELLOW")
                 return False
 
+            negotiation_id = f"{doente_jid}:{asyncio.get_running_loop().time():.6f}"
+            cfp_payload = dict(patient_data)
+            cfp_payload["_negotiation_id"] = negotiation_id
+
             log(agent._coord_name,
                 f"[CONTRACT-NET] A iniciar negociação de EMERGÊNCIA para {nome}...", "RED")
 
             for m_jid in medicos_candidatos:
                 cfp = Message(to=m_jid)
-                cfp.body = json.dumps(patient_data)
+                cfp.body = json.dumps(cfp_payload)
                 cfp.set_metadata("performative", "cfp")
                 cfp.set_metadata("type", "emergency_cfp")
                 cfp.thread = doente_jid
                 await self.send(cfp)
 
-            for s_jid in agent._salas:
+            salas_candidatas = [
+                s_jid for s_jid in agent._salas
+                if AGENT_REGISTRY.get(s_jid, {}).get("category") == "emergency"
+            ]
+
+            for s_jid in salas_candidatas:
                 cfp = Message(to=s_jid)
-                cfp.body = json.dumps(patient_data)
+                cfp.body = json.dumps(cfp_payload)
                 cfp.set_metadata("performative", "cfp")
                 cfp.set_metadata("type", "emergency_cfp")
                 cfp.thread = doente_jid
@@ -173,7 +206,7 @@ class CoordenadorUrgencias(Agent):
 
             medico_propostas = []
             sala_propostas = []
-            expected_replies = len(medicos_candidatos) + len(agent._salas)
+            expected_replies = len(medicos_candidatos) + len(salas_candidatas)
 
             loop = asyncio.get_running_loop()
             deadline = loop.time() + CONTRACT_NET_RESPONSE_WAIT_SECONDS
@@ -189,9 +222,22 @@ class CoordenadorUrgencias(Agent):
                 if reply.thread != doente_jid:
                     await self.handle_out_of_band_message(reply)
                     continue
-                received_replies += 1
                 perf = reply.get_metadata("performative")
-                body = json.loads(reply.body)
+                try:
+                    body = json.loads(reply.body) if reply.body else {}
+                except Exception:
+                    body = {}
+
+                # Ignora respostas tardias de tentativas anteriores para o mesmo
+                # doente. Sem este identificador, uma proposta antiga podia ser
+                # aceite numa tentativa nova e originar dupla alocação.
+                if body.get("negotiation_id") != negotiation_id:
+                    log(agent._coord_name,
+                        f"[CONTRACT-NET] Resposta tardia/sem ID ignorada para {nome}.",
+                        "YELLOW")
+                    continue
+
+                received_replies += 1
                 if perf == "propose":
                     if "medico_jid" in body:
                         medico_propostas.append(body)
@@ -209,6 +255,9 @@ class CoordenadorUrgencias(Agent):
                     "doente_jid": doente_jid,
                     "nome": nome,
                     "tipo": patient_data.get("tipo", "Urgencia"),
+                    "tipo_original": patient_data.get("tipo_original", patient_data.get("tipo", "Urgencia")),
+                    "prioridade": patient_data.get("prioridade", URGENT_PRIORITY_MAX),
+                    "especialidade": patient_data.get("especialidade"),
                     "sala_jid": sala_proposta["sala_jid"]
                 })
                 acc_m.thread = doente_jid
@@ -219,7 +268,10 @@ class CoordenadorUrgencias(Agent):
                 acc_s.body = json.dumps({
                     "doente_jid": doente_jid,
                     "nome": nome,
-                    "tipo": patient_data.get("tipo", "Urgencia")
+                    "tipo": patient_data.get("tipo", "Urgencia"),
+                    "tipo_original": patient_data.get("tipo_original", patient_data.get("tipo", "Urgencia")),
+                    "prioridade": patient_data.get("prioridade", URGENT_PRIORITY_MAX),
+                    "especialidade": patient_data.get("especialidade")
                 })
                 acc_s.thread = doente_jid
                 await self.send(acc_s)
@@ -245,14 +297,14 @@ class CoordenadorUrgencias(Agent):
                     await self.send(rej)
 
                 log(agent._coord_name,
-                    f"[ALOCAÇÃO] EMERGÊNCIA AGENDADA: {nome} → "
+                    f"[ALOCAÇÃO] EMERGÊNCIA ALOCADA: {nome} → "
                     f"Médico={medico_proposta['nome_medico']}, "
                     f"Sala={sala_proposta['nome_sala']}", "BOLD")
                 return True
             else:
                 log(agent._coord_name,
-                    f"[FALHA CRÍTICA] Impossível alocar recursos de emergência para {nome}! "
-                    f"Recursos continuam indisponíveis.", "RED")
+                    f"[URGÊNCIA] Sem recursos disponíveis neste ciclo para {nome}; "
+                    f"doente mantém-se em fila clínica por prioridade.", "YELLOW")
                 return False
 
     async def setup(self):

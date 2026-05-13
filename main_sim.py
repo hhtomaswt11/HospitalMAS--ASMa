@@ -116,29 +116,35 @@ async def spawn_patient(type_entry, hospital_config):
 
 
 async def arrival_generator(type_entry, rate, hospital_config, agents_list):
-    """Generate patients at a Poisson rate for a given hospital."""
-    mean_inter_arrival = 1.0 / rate
+    """Generate patients with configurable daily peaks instead of a flat rate."""
     hospital_id = hospital_config.get("supervisor", "?").split("@")[0]
     log("SIMULATOR",
         f"Starting {type_entry} arrival generator for [{hospital_id}] "
-        f"(avg every {mean_inter_arrival:.1f}s)", "BOLD")
+        f"(base rate={rate:.2f}/s, perfil diário configurável)", "BOLD")
 
     # Sincronizar com o início da simulação às 08h00
     gen_start_time = time.time() - (8 * SIM_HOUR_SECONDS)
 
     while True:
-        wait_time = random.expovariate(rate)
-        await asyncio.sleep(wait_time)
-        
         elapsed = time.time() - gen_start_time
         dia_simulado_s = elapsed % SIM_DAY_SECONDS
-        
+        current_hour = dia_simulado_s / SIM_HOUR_SECONDS
+        current_rate = arrival_rate_for_hour(type_entry, current_hour, rate)
+
+        if current_rate <= 0:
+            await asyncio.sleep(ARRIVAL_CLOSED_RETRY_SECONDS)
+            continue
+
+        wait_time = random.expovariate(current_rate)
+        await asyncio.sleep(wait_time)
+
+        elapsed = time.time() - gen_start_time
+        dia_simulado_s = elapsed % SIM_DAY_SECONDS
+
         # Janela de fecho das consultas de rotina: 20h00 às 08h00
-        is_closed = (dia_simulado_s >= 20 * SIM_HOUR_SECONDS or dia_simulado_s < 8 * SIM_HOUR_SECONDS)
-        
-        if type_entry == "Normal" and is_closed:
-            # Em pausa durante o período de fecho, tentar novamente daqui a um pouco
-            await asyncio.sleep(5)
+        current_hour = dia_simulado_s / SIM_HOUR_SECONDS
+        if type_entry == "Normal" and arrival_rate_for_hour(type_entry, current_hour, rate) <= 0:
+            await asyncio.sleep(ARRIVAL_CLOSED_RETRY_SECONDS)
             continue
             
         # Backpressure real: contar apenas agentes-doente vivos, não a infraestrutura hospitalar.

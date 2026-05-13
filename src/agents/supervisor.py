@@ -62,7 +62,7 @@ class Supervisor(Agent):
         self._coord_urg = cfg["coord_urg"]
         self._supervisor_name = str(agent_jid).split("@")[0]
         import time
-        self._sim_start_time = time.time()
+        self._sim_start_time = time.time() - (8 * SIM_HOUR_SECONDS)
 
     class PeriodicDumperBehaviour(CyclicBehaviour):
         async def run(self):
@@ -132,14 +132,19 @@ class Supervisor(Agent):
                     queue_name = data.get("queue")
                     patients = data.get("patients", [])
                     by_specialty = data.get("by_specialty")
+                    scheduled = data.get("scheduled", [])
+                    scheduled_by_specialty = data.get("scheduled_by_specialty")
                     # 1. Update hospital-namespaced key
                     h_key = f"h{self.agent._hospital_id}_{queue_name}"
                     GLOBAL_WAITLIST[h_key] = patients
                     
-                    # 2. Update specialty grouping for this hospital
+                    # 2. Update specialty grouping and future agenda for this hospital
                     grouped_key = f"{h_key}_by_specialty"
                     if by_specialty is not None:
                         GLOBAL_WAITLIST[grouped_key] = by_specialty
+                    GLOBAL_WAITLIST[f"{h_key}_scheduled"] = scheduled
+                    if scheduled_by_specialty is not None:
+                        GLOBAL_WAITLIST[f"{h_key}_scheduled_by_specialty"] = scheduled_by_specialty
                     
                     # 3. Aggregated key (for backward compatibility or global views)
                     # We overwrite with latest or we could merge, but for now we just 
@@ -147,9 +152,13 @@ class Supervisor(Agent):
                     GLOBAL_WAITLIST[queue_name] = patients
                     if by_specialty is not None:
                         GLOBAL_WAITLIST[f"{queue_name}_by_specialty"] = by_specialty
+                    GLOBAL_WAITLIST[f"{queue_name}_scheduled"] = scheduled
+                    if scheduled_by_specialty is not None:
+                        GLOBAL_WAITLIST[f"{queue_name}_scheduled_by_specialty"] = scheduled_by_specialty
                     
                     log(self.agent._supervisor_name,
-                        f"[SALA-ESPERA] Fila '{h_key}' atualizada ({len(patients)} doentes).",
+                        f"[SALA-ESPERA] Fila '{h_key}' atualizada "
+                        f"({len(patients)} pendentes, {len(scheduled)} agendados/em curso).",
                         "YELLOW")
 
                 elif performative == "inform" and msg_type == "emergency_alert":
@@ -194,9 +203,14 @@ class Supervisor(Agent):
                         base_key = f"h{h_id}_routine"
                         spec_key = f"h{h_id}_routine_by_specialty"
 
-                    total_load = len(GLOBAL_WAITLIST.get(base_key, []))
+                    pending_total = len(GLOBAL_WAITLIST.get(base_key, []))
+                    scheduled_total = len(GLOBAL_WAITLIST.get(f"{base_key}_scheduled", []))
                     by_spec = GLOBAL_WAITLIST.get(spec_key, {})
-                    spec_load = len(by_spec.get(requested_specialty, [])) if requested_specialty else 0
+                    scheduled_by_spec = GLOBAL_WAITLIST.get(f"{base_key}_scheduled_by_specialty", {})
+                    pending_spec = len(by_spec.get(requested_specialty, [])) if requested_specialty else 0
+                    scheduled_spec = len(scheduled_by_spec.get(requested_specialty, [])) if requested_specialty else 0
+                    spec_load = pending_spec + scheduled_spec
+                    total_load = pending_total + scheduled_total
 
                     reply = msg.make_reply()
                     reply.set_metadata("performative", "propose")
@@ -204,13 +218,18 @@ class Supervisor(Agent):
                     reply.body = json.dumps({
                         "specialty_load": spec_load,
                         "total_load": total_load,
+                        "pending_specialty_load": pending_spec,
+                        "scheduled_specialty_load": scheduled_spec,
+                        "pending_total_load": pending_total,
+                        "scheduled_total_load": scheduled_total,
                         "hospital_id": h_id,
                         "supervisor_jid": str(self.agent.jid),
                     })
                     await self.send(reply)
                     log(self.agent._supervisor_name,
                         f"[LOAD-QUERY] Respondido: esp={requested_specialty}, "
-                        f"spec_load={spec_load}, total={total_load}", "CYAN")
+                        f"spec_load={spec_load} (fila={pending_spec}, agenda={scheduled_spec}), "
+                        f"total={total_load} (fila={pending_total}, agenda={scheduled_total})", "CYAN")
 
                 elif performative == "request" and msg_type == "preemption_order":
                     # Refuse preemption requests that target routine consultations.

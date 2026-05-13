@@ -166,7 +166,7 @@ ROUTINE_END_H = 20
 # Duração em horas simuladas por tipo de procedimento
 # Valores fracionados para sincronizar com o tempo real (1 hora simulada = 10s)
 PROCEDURE_HOURS = {
-    "consultation": 20 / 60.0,
+    "consultation": 15 / 60.0,
     "emergency":    15 / 60.0,
     "exam":         20 / 60.0,
     "surgery":      1.0,  # dynamic, will be overridden
@@ -178,9 +178,51 @@ PROCEDURE_HOURS = {
 SIMULATION_WEEKS = 1
 # Duração real da demonstração. Por defeito fica em 3 minutos para a defesa;
 # se for preciso correr uma semana simulada completa, definir SIMULATION_DURATION=1680 no ambiente.
-SIMULATION_DURATION = 45
-ARRIVAL_RATE_NORMAL = 1.5  # reduzido para a capacidade do hospital
-ARRIVAL_RATE_URGENT = 0.75 # reduzido para a capacidade do hospital
+SIMULATION_DURATION = int(os.getenv("SIMULATION_DURATION", "45"))
+ARRIVAL_RATE_NORMAL_BASE = float(os.getenv("ARRIVAL_RATE_NORMAL", "1.5"))
+ARRIVAL_RATE_URGENT_BASE = float(os.getenv("ARRIVAL_RATE_URGENT", "0.75"))
+# Mantém nomes antigos para compatibilidade com o main_sim e documentação.
+ARRIVAL_RATE_NORMAL = ARRIVAL_RATE_NORMAL_BASE
+ARRIVAL_RATE_URGENT = ARRIVAL_RATE_URGENT_BASE
+
+# Perfil simples de afluência ao longo do dia simulado.
+# Cada tuplo é (hora_inicio, hora_fim, multiplicador_da_taxa_base).
+# O gerador usa estes multiplicadores para variar o intervalo médio entre chegadas.
+ARRIVAL_PROFILE_NORMAL = [
+    (8, 10, 1.8),   # pico da manhã
+    (10, 12, 1.1),
+    (12, 14, 0.6),  # período mais calmo
+    (14, 18, 1.25), # tarde normal/alta
+    (18, 20, 0.75), # fim do dia mais calmo
+]
+ARRIVAL_PROFILE_URGENT = [
+    (0, 8, 0.65),
+    (8, 10, 1.25),
+    (10, 14, 0.85),
+    (14, 18, 1.10),
+    (18, 24, 0.75),
+]
+ARRIVAL_CLOSED_RETRY_SECONDS = 5
+
+def arrival_rate_for_hour(tipo_entrada: str, hour: float, base_rate=None) -> float:
+    """Devolve a taxa de chegada para a hora simulada atual.
+
+    A taxa final é: taxa_base * multiplicador_do_período. Para consultas
+    de rotina, fora da janela administrativa 08h-20h a taxa é zero.
+    """
+    is_normal = tipo_entrada == "Normal"
+    if is_normal and not (ROUTINE_START_H <= hour < ROUTINE_END_H):
+        return 0.0
+
+    base = base_rate if base_rate is not None else (
+        ARRIVAL_RATE_NORMAL_BASE if is_normal else ARRIVAL_RATE_URGENT_BASE
+    )
+    profile = ARRIVAL_PROFILE_NORMAL if is_normal else ARRIVAL_PROFILE_URGENT
+    hour = hour % 24
+    for start, end, multiplier in profile:
+        if start <= hour < end:
+            return max(0.0, base * multiplier)
+    return max(0.0, base)
 
 # Probability that a newly spawned patient is redirected to the central triage agent
 PROB_CENTRAL_TRIAGE = 0.3
@@ -193,6 +235,7 @@ COORDINATOR_RECEIVE_TIMEOUT_SECONDS = 1
 COORDINATOR_PROPOSAL_TIMEOUT_SECONDS = 1.5
 RESOURCE_RECEIVE_TIMEOUT_SECONDS = 10
 DISPATCH_BATCH_LIMIT = 2
+ROUTINE_DISPATCH_BATCH_LIMIT = 4
 
 CONTRACT_NET_RESPONSE_WAIT_SECONDS = 0.75
 TRIAGE_CONTRACT_NET_RESPONSE_WAIT_SECONDS = 1
@@ -212,12 +255,16 @@ SURGERY_RETRY_MAX_SECONDS = 30
 SURGERY_MAX_RETRIES = 5
 
 PREEMPTION_CONFIRM_WAIT_SECONDS = 2
+ROUTINE_RESERVATION_CONFIRM_TIMEOUT_SECONDS = 2
+
 
 # Consulta de rotina com agenda por slots (tempo simulado)
+# A consulta clínica dura 15 minutos, mas os slots são espaçados de 20 minutos
+# para criar uma pequena folga operacional entre consultas consecutivas.
 CONSULTATION_SLOT_MINUTES = 20
 CONSULTATION_SLOT_SECONDS = SIM_HOUR_SECONDS * (CONSULTATION_SLOT_MINUTES / 60.0)
 
-CONSULTATION_DURATION_NORMAL_SECONDS = CONSULTATION_SLOT_SECONDS
+CONSULTATION_DURATION_NORMAL_SECONDS = SIM_HOUR_SECONDS * (15 / 60.0)
 CONSULTATION_DURATION_URGENT_SECONDS = SIM_HOUR_SECONDS * (15 / 60.0)
 EXAM_RESULTS_WAIT_SECONDS = 2  # mantido por compatibilidade; o fluxo agora espera por exam_result real
 PROCEDURE_RESULT_TIMEOUT_SECONDS = 15  # mantido por compatibilidade
@@ -314,7 +361,7 @@ H1_CONFIG = build_hospital_config(
     medicos_names=[f"medico{i}" for i in range(1, 31)],
     medicos_triagem_names=[f"medico_triagem{i}" for i in range(1, 4)],
     medicos_consultas_routine_names=[f"medico{i}" for i in [1, 2, 3, 12, 13, 14]],
-    medicos_consultas_emergency_names=[f"medico{i}" for i in [1, 2, 3, 4, 5, 6, 12, 13, 14, 15, 16, 17, 23, 24, 25]],
+    medicos_consultas_emergency_names=[f"medico{i}" for i in [4, 5, 6, 15, 16, 17, 23, 24, 25]],
     salas_consultas_routine_names=[SALA1, SALA2, SALA3, SALA4, SALA5, SALA6, SALA7],
     salas_consultas_emergency_names=[SALA8, SALA9, SALA10],
     equipamentos_map=[
@@ -337,7 +384,7 @@ H2_CONFIG = build_hospital_config(
     medicos_names=[f"h2_medico{i}" for i in range(1, 31)],
     medicos_triagem_names=[f"h2_medico_triagem{i}" for i in range(1, 4)],
     medicos_consultas_routine_names=[f"h2_medico{i}" for i in [1, 2, 3, 12, 13, 14]],
-    medicos_consultas_emergency_names=[f"h2_medico{i}" for i in [1, 2, 3, 4, 5, 6, 12, 13, 14, 15, 16, 17, 23, 24, 25]],
+    medicos_consultas_emergency_names=[f"h2_medico{i}" for i in [4, 5, 6, 15, 16, 17, 23, 24, 25]],
     salas_consultas_routine_names=[H2_SALA1, H2_SALA2, H2_SALA3, H2_SALA4, H2_SALA5, H2_SALA6, H2_SALA7],
     salas_consultas_emergency_names=[H2_SALA8, H2_SALA9, H2_SALA10],
     equipamentos_map=[

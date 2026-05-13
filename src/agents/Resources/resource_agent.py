@@ -8,7 +8,7 @@ from spade.message import Message
 from src.config import (
     SUPERVISOR, jid, log,
     SIM_HOUR_SECONDS, SIM_DAY_SECONDS, SIM_WEEK_SECONDS,
-    WEEKLY_MAX_HOURS, AGENT_REGISTRY
+    WEEKLY_MAX_HOURS, AGENT_REGISTRY, PROCEDURE_HOURS
 )
 
 
@@ -51,7 +51,15 @@ class ResourceAgent(Agent):
                 "YELLOW")
         return changed
 
-    def add_hours(self, procedure_type: str, hours: float = 1.0):
+    def add_hours(self, procedure_type: str, hours=None):
+        """Soma a duração real do ato clínico à carga semanal do recurso.
+
+        Antes era somada 1h por defeito, o que inflacionava consultas de
+        15 minutos e exames. Quando a duração não é passada explicitamente
+        (ex.: cirurgia dinâmica), usa PROCEDURE_HOURS do config.py.
+        """
+        if hours is None:
+            hours = float(PROCEDURE_HOURS.get(procedure_type, 1.0))
         self.weekly_hours_used += hours
         log(self.get_resource_name(),
             f"[HORAS] {self.get_resource_name()} acumulou {self.weekly_hours_used:.2f}/{self.max_weekly_hours}h semanais "
@@ -89,10 +97,31 @@ class ResourceAgent(Agent):
         }
         # Optional scheduling fields — subclasses set these attributes
         for field in ("role", "weekly_hours_used", "max_weekly_hours",
-                      "on_shift", "current_assignment_type", "consult_mode"):
+                      "on_shift", "current_assignment_type", "consult_mode", "zone", "specialty"):
             val = getattr(self, field, None)
             if val is not None:
                 payload[field] = val
+
+        agenda = getattr(self, "agenda", None)
+        if isinstance(agenda, dict):
+            payload["agenda_count"] = len(agenda)
+            future_slots = []
+            for doente_jid, entry in agenda.items():
+                if not isinstance(entry, dict):
+                    continue
+                start_at = entry.get("consultation_start_at") or entry.get("exam_start_at") or entry.get("surgery_start_at")
+                if start_at is None:
+                    continue
+                try:
+                    future_slots.append((float(start_at), doente_jid, entry))
+                except Exception:
+                    continue
+            if future_slots:
+                future_slots.sort(key=lambda item: item[0])
+                start_at, doente_jid, entry = future_slots[0]
+                payload["next_scheduled_at"] = start_at
+                payload["next_scheduled_patient"] = doente_jid
+                payload["next_scheduled_patient_name"] = entry.get("nome", doente_jid)
         return payload
 
     def build_status_message(self):
