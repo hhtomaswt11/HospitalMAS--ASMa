@@ -2,63 +2,22 @@ import asyncio
 import json
 import time
 
-from spade.agent import Agent
 from spade.behaviour import CyclicBehaviour
 from spade.message import Message
 
+from src.agents.Coordinators.coordenador_base import CoordenadorBase
 from src.config import *
 
 
-class CoordenadorExames(Agent):
+class CoordenadorExames(CoordenadorBase):
     """Coordena MCDTs com fila, backoff e notificação explícita de falha."""
 
     def __init__(self, agent_jid, password, hospital_config=None, **kwargs):
-        super().__init__(agent_jid, password, **kwargs)
-        cfg = hospital_config or H1_CONFIG
-        self.hospital_config = cfg
+        super().__init__(agent_jid, password, hospital_config=hospital_config, **kwargs)
+        cfg = self.hospital_config
         self._medicos = cfg["medicos"]
         self._equipamentos = cfg["equipamentos"]
         self._equipamentos_specialty = cfg["equipamentos_specialty"]
-        self._coord_name = str(agent_jid).split("@")[0]
-
-        self.pending_exam_requests = []
-        self.pending_exam_patient_ids = set()
-
-    def enqueue_exam_request(self, data):
-        doente_jid = data.get("doente_jid")
-        if not doente_jid:
-            return False
-        if doente_jid in self.pending_exam_patient_ids:
-            return False
-        data.setdefault("_retry_count", 0)
-        data.setdefault("_next_retry_at", 0.0)
-        self.pending_exam_requests.append(data)
-        self.pending_exam_patient_ids.add(doente_jid)
-        return True
-
-    def get_ready_exam_index(self):
-        now = time.monotonic()
-        best_idx = None
-        best_priority = float('inf')
-        
-        for idx, request in enumerate(self.pending_exam_requests):
-            if float(request.get("_next_retry_at", 0.0)) <= now:
-                p_val = request.get("prioridade")
-                # Fallback to ROUTINE_SURGERY_PRIORITY if priority is None or missing
-                prioridade = float(p_val) if p_val is not None else float(ROUTINE_SURGERY_PRIORITY)
-                if prioridade < best_priority:
-                    best_priority = prioridade
-                    best_idx = idx
-        return best_idx
-
-    def schedule_exam_retry(self, data):
-        retries = int(data.get("_retry_count", 0)) + 1
-        data["_retry_count"] = retries
-        if retries >= EXAM_MAX_RETRIES:
-            return None, retries, True
-        delay = min(EXAM_RETRY_BASE_SECONDS * (2 ** (retries - 1)), EXAM_RETRY_MAX_SECONDS)
-        data["_next_retry_at"] = time.monotonic() + delay
-        return delay, retries, False
 
     class ExamCoordinatorBehaviour(CyclicBehaviour):
 
@@ -67,7 +26,7 @@ class CoordenadorExames(Agent):
             msg_type = msg.get_metadata("type")
             if performative == "request" and msg_type == "exam_request":
                 data = json.loads(msg.body)
-                if self.agent.enqueue_exam_request(data):
+                if self.agent.enqueue(data):
                     log(self.agent._coord_name,
                         f"[FILA-EXAME] Pedido enfileirado fora de banda: {data.get('nome', '?')}", "YELLOW")
                 else:
@@ -110,21 +69,22 @@ class CoordenadorExames(Agent):
                 "RED")
 
         async def dispatch_next_exam(self):
-            idx = self.agent.get_ready_exam_index()
+            idx = self.agent.get_ready_index()
             if idx is None:
                 return False
 
-            patient = self.agent.pending_exam_requests[idx]
+            patient = self.agent.pending_requests[idx]
             allocated = await self.run_exam_contract_net(patient)
             if allocated:
-                removed = self.agent.pending_exam_requests.pop(idx)
-                self.agent.pending_exam_patient_ids.discard(removed.get("doente_jid"))
+                removed = self.agent.pending_requests.pop(idx)
+                self.agent.pending_patient_ids.discard(removed.get("doente_jid"))
                 return True
 
-            delay, retries, failed = self.agent.schedule_exam_retry(patient)
+            delay, retries, failed = self.agent.schedule_retry(
+                patient, EXAM_MAX_RETRIES, EXAM_RETRY_BASE_SECONDS, EXAM_RETRY_MAX_SECONDS)
             if failed:
-                removed = self.agent.pending_exam_requests.pop(idx)
-                self.agent.pending_exam_patient_ids.discard(removed.get("doente_jid"))
+                removed = self.agent.pending_requests.pop(idx)
+                self.agent.pending_patient_ids.discard(removed.get("doente_jid"))
                 await self.notify_exam_failure(
                     removed,
                     f"sem alocação completa após {EXAM_MAX_RETRIES} tentativas",
@@ -139,7 +99,7 @@ class CoordenadorExames(Agent):
 
         async def dispatch_exam_batch(self, max_dispatches=DISPATCH_BATCH_LIMIT):
             dispatched = 0
-            while dispatched < max_dispatches and self.agent.pending_exam_requests:
+            while dispatched < max_dispatches and self.agent.pending_requests:
                 progressed = await self.dispatch_next_exam()
                 if not progressed:
                     break
@@ -160,7 +120,7 @@ class CoordenadorExames(Agent):
         async def run(self):
             msg = await self.receive(timeout=COORDINATOR_RECEIVE_TIMEOUT_SECONDS)
             if msg is None:
-                if self.agent.pending_exam_requests:
+                if self.agent.pending_requests:
                     await self.dispatch_exam_batch()
                 return
 
@@ -171,27 +131,13 @@ class CoordenadorExames(Agent):
                 data = json.loads(msg.body)
                 log(self.agent._coord_name,
                     f"[PEDIDO] Pedido de diagnóstico MCDT recebido para: {data.get('nome', '?')}", "CYAN")
-                if self.agent.enqueue_exam_request(data):
+                if self.agent.enqueue(data):
                     await self.dispatch_exam_batch()
                 else:
                     log(self.agent._coord_name,
                         f"[FILA-EXAME] Pedido duplicado ignorado: {data.get('nome', '?')}", "YELLOW")
             else:
                 await self.handle_out_of_band_message(msg)
-
-        async def reject_unselected(self, propostas, selected_jid, jid_key, doente_jid, motivo):
-            for proposta in propostas:
-                target = proposta.get(jid_key)
-                if not target or target == selected_jid:
-                    continue
-                rej = Message(to=target)
-                rej.set_metadata("performative", "reject-proposal")
-                rej.body = json.dumps({"motivo": motivo, "doente_jid": doente_jid})
-                rej.thread = doente_jid
-                await self.send(rej)
-
-        async def reject_all(self, propostas, jid_key, doente_jid, motivo):
-            await self.reject_unselected(propostas, None, jid_key, doente_jid, motivo)
 
         async def run_exam_contract_net(self, patient_data):
             agent = self.agent
@@ -304,7 +250,7 @@ class CoordenadorExames(Agent):
                     cancel_m.thread = preempt_m
                     await self.send(cancel_m)
                     if preempt_m not in preempted_set:
-                        self.agent.enqueue_exam_request({
+                        agent.enqueue({
                             "doente_jid": preempt_m,
                             "nome": f"Doente {preempt_m.split('@')[0]} (Re-agendado)",
                             "tipo": "Exam",
@@ -322,7 +268,7 @@ class CoordenadorExames(Agent):
                     cancel_eq.thread = preempt_eq
                     await self.send(cancel_eq)
                     if preempt_eq not in preempted_set:
-                        self.agent.enqueue_exam_request({
+                        agent.enqueue({
                             "doente_jid": preempt_eq,
                             "nome": f"Doente {preempt_eq.split('@')[0]} (Re-agendado)",
                             "tipo": "Exam",
@@ -357,8 +303,23 @@ class CoordenadorExames(Agent):
                 acc_med.thread = doente_jid
                 await self.send(acc_med)
 
-                await self.reject_unselected(equipamento_propostas, equipamento_proposta["sala_jid"], "sala_jid", doente_jid, "Proposta não selecionada")
-                await self.reject_unselected(medico_propostas, medico_proposta["medico_jid"], "medico_jid", doente_jid, "Proposta não selecionada")
+                await agent.reject_unselected(self, equipamento_propostas, equipamento_proposta["sala_jid"], "sala_jid", doente_jid, "Proposta não selecionada")
+                await agent.reject_unselected(self, medico_propostas, medico_proposta["medico_jid"], "medico_jid", doente_jid, "Proposta não selecionada")
+
+                # Aguardar confirmação de ambos os recursos
+                expected = {equipamento_proposta["sala_jid"], medico_proposta["medico_jid"]}
+                all_confirmed, confirmed = await agent.wait_for_confirmations(
+                    self, doente_jid, expected,
+                    CONTRACT_NET_RESPONSE_WAIT_SECONDS,
+                    oob_handler=self.handle_out_of_band_message,
+                )
+                if not all_confirmed:
+                    missing = expected - confirmed
+                    log(agent._coord_name,
+                        f"[CONFIRMAÇÃO-FALHOU] Exame para {nome}: {len(missing)} recurso(s) "
+                        f"não confirmaram reserva. Re-tentativa.",
+                        "RED")
+                    return False
 
                 log(agent._coord_name,
                     f"[ALOCAÇÃO] DIAGNÓSTICO AGENDADO: {nome} → "
@@ -383,8 +344,8 @@ class CoordenadorExames(Agent):
                     await self.send(notif)
                 return True
 
-            await self.reject_all(equipamento_propostas, "sala_jid", doente_jid, "Sem par médico/equipamento completo")
-            await self.reject_all(medico_propostas, "medico_jid", doente_jid, "Sem par médico/equipamento completo")
+            await agent.reject_all(self, equipamento_propostas, "sala_jid", doente_jid, "Sem par médico/equipamento completo")
+            await agent.reject_all(self, medico_propostas, "medico_jid", doente_jid, "Sem par médico/equipamento completo")
             log(agent._coord_name,
                 f"[ALLOCATION-FAILED] Sem alocação completa de exame para {nome} (esp={exam_specialty}).",
                 "RED")

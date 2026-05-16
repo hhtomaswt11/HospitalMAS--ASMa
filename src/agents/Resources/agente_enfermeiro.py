@@ -31,11 +31,9 @@ class AgenteEnfermeiro(ResourceAgent):
         cfg = hospital_config or H1_CONFIG
         self._coord_int = cfg["coord_int"]
 
-        # Scheduling
+        # (max_weekly_hours, weekly_hours_used, current_assignment_type
+        #  já são herdados de ResourceAgent)
         self.role = "nurse"
-        self.max_weekly_hours = WEEKLY_MAX_HOURS
-        self.weekly_hours_used = 0.0
-        self.current_assignment_type = None
 
     def get_resource_name(self):
         return self.nome_enfermeiro

@@ -1,46 +1,29 @@
 import asyncio
 import json
 
-from spade.agent import Agent
 from spade.behaviour import CyclicBehaviour
 from spade.message import Message
 
+from src.agents.Coordinators.coordenador_base import CoordenadorBase
 from src.config import *
 
 
-class CoordenadorTriagem(Agent):
+class CoordenadorTriagem(CoordenadorBase):
 
     def __init__(self, agent_jid, password, hospital_config=None, **kwargs):
-        super().__init__(agent_jid, password, **kwargs)
-        cfg = hospital_config or H1_CONFIG
-        self.hospital_config = cfg
-        self._supervisor = cfg["supervisor"]
+        super().__init__(agent_jid, password, hospital_config=hospital_config, **kwargs)
+        cfg = self.hospital_config
         self._medicos_triagem = cfg["medicos_triagem"]
         self._salas_triagem = cfg["salas_triagem"]
         self._coord_urg = cfg["coord_urg"]
-        self._coord_name = str(agent_jid).split("@")[0]
 
-        self.pending_triage = []
-        self.pending_triage_patient_ids = set()
-
-    def enqueue_triage_request(self, data):
-        doente_jid = data.get("doente_jid")
-        if not doente_jid:
-            return False
-        if doente_jid in self.pending_triage_patient_ids:
-            return False
-        self.pending_triage.append(data)
-        self.pending_triage_patient_ids.add(doente_jid)
-        return True
-
-    def total_pending(self):
-        return len(self.pending_triage)
+    # enqueue e total_pending herdados de CoordenadorBase
 
     class TriageCoordinatorBehaviour(CyclicBehaviour):
         async def run(self):
             msg = await self.receive(timeout=COORDINATOR_RECEIVE_TIMEOUT_SECONDS)
             if msg is None:
-                if self.agent.pending_triage:
+                if self.agent.pending_requests:
                     await self.dispatch_triage_batch()
                 return
 
@@ -51,7 +34,7 @@ class CoordenadorTriagem(Agent):
                 data = json.loads(msg.body)
                 log(self.agent._coord_name,
                     f"[TRIAGEM] Pedido de urgencia recebido: {data.get('nome', '?')}", "YELLOW")
-                if self.agent.enqueue_triage_request(data):
+                if self.agent.enqueue(data):
                     await self.publish_waitlist()
                     await self.dispatch_triage_batch()
                 else:
@@ -85,26 +68,26 @@ class CoordenadorTriagem(Agent):
                         "tipo": p.get("tipo", "Urgencia"),
                         "prioridade": p.get("prioridade"),
                     }
-                    for p in self.agent.pending_triage
+            for p in self.agent.pending_requests
                 ],
             })
             await self.send(msg)
 
         async def dispatch_next_triage(self):
-            if not self.agent.pending_triage:
+            if not self.agent.pending_requests:
                 return False
-            patient = self.agent.pending_triage[0]
+            patient = self.agent.pending_requests[0]
             allocated = await self.run_triage_contract_net(patient)
             if allocated:
-                removed = self.agent.pending_triage.pop(0)
-                self.agent.pending_triage_patient_ids.discard(removed.get("doente_jid"))
+                removed = self.agent.pending_requests.pop(0)
+                self.agent.pending_patient_ids.discard(removed.get("doente_jid"))
                 await self.publish_waitlist()
                 return True
             return False
 
         async def dispatch_triage_batch(self, max_dispatches=DISPATCH_BATCH_LIMIT):
             dispatched = 0
-            while dispatched < max_dispatches and self.agent.pending_triage:
+            while dispatched < max_dispatches and self.agent.pending_requests:
                 allocated = await self.dispatch_next_triage()
                 if not allocated:
                     break
@@ -150,7 +133,7 @@ class CoordenadorTriagem(Agent):
                     if (reply.get_metadata("performative") == "request"
                             and reply.get_metadata("type") == "patient_request"):
                         extra = json.loads(reply.body)
-                        if agent.enqueue_triage_request(extra):
+                        if agent.enqueue(extra):
                             await self.publish_waitlist()
                     continue
                 received_replies += 1

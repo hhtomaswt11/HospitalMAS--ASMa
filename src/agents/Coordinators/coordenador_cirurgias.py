@@ -2,61 +2,21 @@ import asyncio
 import json
 import time
 
-from spade.agent import Agent
 from spade.behaviour import CyclicBehaviour
 from spade.message import Message
 
+from src.agents.Coordinators.coordenador_base import CoordenadorBase
 from src.config import *
 
 
-class CoordenadorCirurgias(Agent):
+class CoordenadorCirurgias(CoordenadorBase):
     """Coordena cirurgias com fila, backoff e resultado explícito para o médico solicitante."""
 
     def __init__(self, agent_jid, password, hospital_config=None, **kwargs):
-        super().__init__(agent_jid, password, **kwargs)
-        cfg = hospital_config or H1_CONFIG
+        super().__init__(agent_jid, password, hospital_config=hospital_config, **kwargs)
+        cfg = self.hospital_config
         self._medicos = cfg["medicos"]
         self._blocos = cfg["blocos"]
-        self._coord_name = str(agent_jid).split("@")[0]
-
-        self.pending_surgery_requests = []
-        self.pending_surgery_patient_ids = set()
-
-    def enqueue_surgery_request(self, data):
-        doente_jid = data.get("doente_jid")
-        if not doente_jid:
-            return False
-        if doente_jid in self.pending_surgery_patient_ids:
-            return False
-        data.setdefault("_retry_count", 0)
-        data.setdefault("_next_retry_at", 0.0)
-        self.pending_surgery_requests.append(data)
-        self.pending_surgery_patient_ids.add(doente_jid)
-        return True
-
-    def get_ready_surgery_index(self):
-        now = time.monotonic()
-        best_idx = None
-        best_priority = float('inf')
-        
-        for idx, request in enumerate(self.pending_surgery_requests):
-            if float(request.get("_next_retry_at", 0.0)) <= now:
-                p_val = request.get("prioridade")
-                # Fallback to ROUTINE_SURGERY_PRIORITY if priority is None or missing
-                prioridade = float(p_val) if p_val is not None else float(ROUTINE_SURGERY_PRIORITY)
-                if prioridade < best_priority:
-                    best_priority = prioridade
-                    best_idx = idx
-        return best_idx
-
-    def schedule_surgery_retry(self, data):
-        retries = int(data.get("_retry_count", 0)) + 1
-        data["_retry_count"] = retries
-        if retries >= SURGERY_MAX_RETRIES:
-            return None, retries, True
-        delay = min(SURGERY_RETRY_BASE_SECONDS * (2 ** (retries - 1)), SURGERY_RETRY_MAX_SECONDS)
-        data["_next_retry_at"] = time.monotonic() + delay
-        return delay, retries, False
 
     class SurgeryCoordinatorBehaviour(CyclicBehaviour):
 
@@ -65,7 +25,7 @@ class CoordenadorCirurgias(Agent):
             msg_type = msg.get_metadata("type")
             if performative == "request" and msg_type == "surgery_request":
                 data = json.loads(msg.body)
-                if self.agent.enqueue_surgery_request(data):
+                if self.agent.enqueue(data):
                     log(self.agent._coord_name,
                         f"[FILA-CIR] Pedido enfileirado fora de banda: {data.get('nome', '?')}", "YELLOW")
                 else:
@@ -103,21 +63,22 @@ class CoordenadorCirurgias(Agent):
                 "RED")
 
         async def dispatch_next_surgery(self):
-            idx = self.agent.get_ready_surgery_index()
+            idx = self.agent.get_ready_index()
             if idx is None:
                 return False
 
-            patient = self.agent.pending_surgery_requests[idx]
+            patient = self.agent.pending_requests[idx]
             allocated = await self.run_surgery_contract_net(patient)
             if allocated:
-                removed = self.agent.pending_surgery_requests.pop(idx)
-                self.agent.pending_surgery_patient_ids.discard(removed.get("doente_jid"))
+                removed = self.agent.pending_requests.pop(idx)
+                self.agent.pending_patient_ids.discard(removed.get("doente_jid"))
                 return True
 
-            delay, retries, failed = self.agent.schedule_surgery_retry(patient)
+            delay, retries, failed = self.agent.schedule_retry(
+                patient, SURGERY_MAX_RETRIES, SURGERY_RETRY_BASE_SECONDS, SURGERY_RETRY_MAX_SECONDS)
             if failed:
-                removed = self.agent.pending_surgery_requests.pop(idx)
-                self.agent.pending_surgery_patient_ids.discard(removed.get("doente_jid"))
+                removed = self.agent.pending_requests.pop(idx)
+                self.agent.pending_patient_ids.discard(removed.get("doente_jid"))
                 await self.notify_surgery_failure(
                     removed,
                     f"sem bloco/cirurgião disponível após {SURGERY_MAX_RETRIES} tentativas",
@@ -132,7 +93,7 @@ class CoordenadorCirurgias(Agent):
 
         async def dispatch_surgery_batch(self, max_dispatches=DISPATCH_BATCH_LIMIT):
             dispatched = 0
-            while dispatched < max_dispatches and self.agent.pending_surgery_requests:
+            while dispatched < max_dispatches and self.agent.pending_requests:
                 progressed = await self.dispatch_next_surgery()
                 if not progressed:
                     break
@@ -141,7 +102,7 @@ class CoordenadorCirurgias(Agent):
         async def run(self):
             msg = await self.receive(timeout=COORDINATOR_RECEIVE_TIMEOUT_SECONDS)
             if msg is None:
-                if self.agent.pending_surgery_requests:
+                if self.agent.pending_requests:
                     await self.dispatch_surgery_batch()
                 return
 
@@ -152,27 +113,13 @@ class CoordenadorCirurgias(Agent):
                 data = json.loads(msg.body)
                 log(self.agent._coord_name,
                     f"[PEDIDO] Pedido de cirurgia recebido para: {data.get('nome', '?')}", "MAGENTA")
-                if self.agent.enqueue_surgery_request(data):
+                if self.agent.enqueue(data):
                     await self.dispatch_surgery_batch()
                 else:
                     log(self.agent._coord_name,
                         f"[FILA-CIR] Pedido duplicado ignorado: {data.get('nome', '?')}", "YELLOW")
             else:
                 await self.handle_out_of_band_message(msg)
-
-        async def reject_unselected(self, propostas, selected_jid, jid_key, doente_jid, motivo):
-            for proposta in propostas:
-                target = proposta.get(jid_key)
-                if not target or target == selected_jid:
-                    continue
-                rej = Message(to=target)
-                rej.set_metadata("performative", "reject-proposal")
-                rej.body = json.dumps({"motivo": motivo, "doente_jid": doente_jid})
-                rej.thread = doente_jid
-                await self.send(rej)
-
-        async def reject_all(self, propostas, jid_key, doente_jid, motivo):
-            await self.reject_unselected(propostas, None, jid_key, doente_jid, motivo)
 
         async def run_surgery_contract_net(self, patient_data):
             agent = self.agent
@@ -283,7 +230,7 @@ class CoordenadorCirurgias(Agent):
                     if preempt_m not in preempted_set:
                         # Since only routine surgeries are preemptable in the medical agent,
                         # we can safely re-enqueue with routine priority.
-                        self.agent.enqueue_surgery_request({
+                        agent.enqueue({
                             "doente_jid": preempt_m,
                             "nome": f"Doente {preempt_m.split('@')[0]} (Re-agendado)",
                             "tipo": "Surgery",
@@ -300,7 +247,7 @@ class CoordenadorCirurgias(Agent):
                     cancel_eq.thread = preempt_eq
                     await self.send(cancel_eq)
                     if preempt_eq not in preempted_set:
-                        self.agent.enqueue_surgery_request({
+                        agent.enqueue({
                             "doente_jid": preempt_eq,
                             "nome": f"Doente {preempt_eq.split('@')[0]} (Re-agendado)",
                             "tipo": "Surgery",
@@ -343,8 +290,23 @@ class CoordenadorCirurgias(Agent):
 
                 await self.send(acc_m)
 
-                await self.reject_unselected(bloco_propostas, bloco_proposta["sala_jid"], "sala_jid", doente_jid, "Proposta não selecionada")
-                await self.reject_unselected(medico_propostas, medico_proposta["medico_jid"], "medico_jid", doente_jid, "Proposta não selecionada")
+                await agent.reject_unselected(self, bloco_propostas, bloco_proposta["sala_jid"], "sala_jid", doente_jid, "Proposta não selecionada")
+                await agent.reject_unselected(self, medico_propostas, medico_proposta["medico_jid"], "medico_jid", doente_jid, "Proposta não selecionada")
+
+                # Aguardar confirmação de ambos os recursos
+                expected = {bloco_proposta["sala_jid"], medico_proposta["medico_jid"]}
+                all_confirmed, confirmed = await agent.wait_for_confirmations(
+                    self, doente_jid, expected,
+                    CONTRACT_NET_RESPONSE_WAIT_SECONDS,
+                    oob_handler=self.handle_out_of_band_message,
+                )
+                if not all_confirmed:
+                    missing = expected - confirmed
+                    log(agent._coord_name,
+                        f"[CONFIRMAÇÃO-FALHOU] Cirurgia para {nome}: {len(missing)} recurso(s) "
+                        f"não confirmaram reserva. Re-tentativa.",
+                        "RED")
+                    return False
 
                 log(agent._coord_name,
                     f"[ALOCAÇÃO] CIRURGIA AGENDADA: {nome} → "
@@ -367,8 +329,8 @@ class CoordenadorCirurgias(Agent):
                     await self.send(notif)
                 return True
 
-            await self.reject_all(bloco_propostas, "sala_jid", doente_jid, "Sem par bloco/cirurgião completo")
-            await self.reject_all(medico_propostas, "medico_jid", doente_jid, "Sem par bloco/cirurgião completo")
+            await agent.reject_all(self, bloco_propostas, "sala_jid", doente_jid, "Sem par bloco/cirurgião completo")
+            await agent.reject_all(self, medico_propostas, "medico_jid", doente_jid, "Sem par bloco/cirurgião completo")
             log(agent._coord_name,
                 f"[ALLOCATION-FAILED] No valid surgical resources available for {nome}.", "RED")
             return False

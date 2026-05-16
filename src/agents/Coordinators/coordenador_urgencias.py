@@ -1,55 +1,39 @@
 import asyncio
 import json
 
-from spade.agent import Agent
 from spade.behaviour import CyclicBehaviour
 from spade.message import Message
 
+from src.agents.Coordinators.coordenador_base import CoordenadorBase
 from src.config import *
 
 
-class CoordenadorUrgencias(Agent):
+class CoordenadorUrgencias(CoordenadorBase):
 
     def __init__(self, agent_jid, password, hospital_config=None, **kwargs):
-        super().__init__(agent_jid, password, **kwargs)
-        cfg = hospital_config or H1_CONFIG
-        self.hospital_config = cfg
-        self._supervisor = cfg["supervisor"]
+        super().__init__(agent_jid, password, hospital_config=hospital_config, **kwargs)
+        cfg = self.hospital_config
         self._medicos = cfg["medicos_consultas_emergency"]
         self._salas = cfg["salas_consultas_emergency"]
-        self._coord_name = str(agent_jid).split("@")[0]
 
-        self.pending_urgencies = []
-        self.pending_urgency_patient_ids = set()
         # Doentes já alocados a uma consulta de urgência.
         # Evita realocações duplicadas quando chegam mensagens/replies tardias
         # de tentativas Contract-Net anteriores.
         self.allocated_urgency_patient_ids = set()
 
-    def enqueue_urgency(self, data):
+    def enqueue(self, data):
+        """Override base: also checks allocated set and sorts by priority."""
         doente_jid = data.get("doente_jid")
-        if not doente_jid:
+        if doente_jid and doente_jid in self.allocated_urgency_patient_ids:
             return False
-        if doente_jid in self.pending_urgency_patient_ids:
+        if not super().enqueue(data):
             return False
-        if doente_jid in self.allocated_urgency_patient_ids:
-            return False
-        self.pending_urgencies.append(data)
-        self.pending_urgency_patient_ids.add(doente_jid)
-        self.pending_urgencies.sort(key=lambda p: p.get("prioridade", URGENT_PRIORITY_MAX))
+        self.pending_requests.sort(key=lambda p: p.get("prioridade", URGENT_PRIORITY_MAX))
         return True
 
     def remove_pending_urgency(self, doente_jid):
-        """Remove da fila o doente realmente alocado, mesmo que a fila
-        tenha sido reordenada por prioridades enquanto a negociação decorria.
-        """
-        for idx, patient in enumerate(list(self.pending_urgencies)):
-            if patient.get("doente_jid") == doente_jid:
-                removed = self.pending_urgencies.pop(idx)
-                self.pending_urgency_patient_ids.discard(removed.get("doente_jid"))
-                return removed
-        self.pending_urgency_patient_ids.discard(doente_jid)
-        return None
+        """Remove da fila o doente realmente alocado — delega ao dequeue base."""
+        return self.dequeue(doente_jid)
 
     def get_emergency_waitlist(self):
         return [
@@ -60,12 +44,12 @@ class CoordenadorUrgencias(Agent):
                 "prioridade": p.get("prioridade", 9),
                 "especialidade": p.get("especialidade"),
             }
-            for p in self.pending_urgencies
+            for p in self.pending_requests
         ]
 
     def get_emergency_waitlist_by_specialty(self):
         by_specialty = {}
-        for p in self.pending_urgencies:
+        for p in self.pending_requests:
             specialty = p.get("especialidade") or "sem_especialidade"
             by_specialty.setdefault(specialty, []).append({
                 "doente_jid": p.get("doente_jid"),
@@ -83,7 +67,7 @@ class CoordenadorUrgencias(Agent):
             msg_type = msg.get_metadata("type")
             if performative == "request" and msg_type == "triaged_patient":
                 data = json.loads(msg.body)
-                if self.agent.enqueue_urgency(data):
+                if self.agent.enqueue(data):
                     await self.publish_waitlist()
                     log(self.agent._coord_name,
                         f"[FILA-URG] Pedido triado enfileirado fora de banda: {data.get('nome', '?')} "
@@ -104,9 +88,9 @@ class CoordenadorUrgencias(Agent):
             await self.send(msg)
 
         async def dispatch_next_emergency(self):
-            if not self.agent.pending_urgencies:
+            if not self.agent.pending_requests:
                 return False
-            patient = self.agent.pending_urgencies[0]
+            patient = self.agent.pending_requests[0]
             allocated = await self.run_emergency_contract_net(patient)
             if allocated:
                 removed = self.agent.remove_pending_urgency(patient.get("doente_jid"))
@@ -126,7 +110,7 @@ class CoordenadorUrgencias(Agent):
 
         async def dispatch_emergency_batch(self, max_dispatches=DISPATCH_BATCH_LIMIT):
             dispatched = 0
-            while dispatched < max_dispatches and self.agent.pending_urgencies:
+            while dispatched < max_dispatches and self.agent.pending_requests:
                 allocated = await self.dispatch_next_emergency()
                 if not allocated:
                     break
@@ -135,7 +119,7 @@ class CoordenadorUrgencias(Agent):
         async def run(self):
             msg = await self.receive(timeout=COORDINATOR_RECEIVE_TIMEOUT_SECONDS)
             if msg is None:
-                if self.agent.pending_urgencies:
+                if self.agent.pending_requests:
                     log(self.agent._coord_name,
                         "[RETRY] Sem eventos novos; a re-tentar despacho da urgência pendente.", "YELLOW")
                     await self.dispatch_emergency_batch()
@@ -149,7 +133,7 @@ class CoordenadorUrgencias(Agent):
                 log(self.agent._coord_name,
                     f"[PEDIDO] Pedido triado de emergência recebido: {data['nome']} "
                     f"(prioridade={data['prioridade']})", "RED")
-                if self.agent.enqueue_urgency(data):
+                if self.agent.enqueue(data):
                     await self.publish_waitlist()
                     await self.dispatch_emergency_batch()
                 else:

@@ -29,25 +29,18 @@ class AgenteMedico(ResourceAgent):
         self._coord_cir = cfg["coord_cir"]
         self._coord_int = cfg["coord_int"]
 
-        # ── Scheduling / carga horária ──
+        # ── Atributos específicos do médico ──
+        # (max_weekly_hours, weekly_hours_used, _sim_start_time, _shift_type,
+        #  on_shift, current_assignment_type já são herdados de ResourceAgent)
         self.role = "medic"
-        self.max_weekly_hours = WEEKLY_MAX_HOURS
-        self.weekly_hours_used = 0.0
-        # Por defeito, todos os agentes arrancam como se a simulação já estivesse às 08h00.
-        # Isto evita a oscilação inicial errada em que os turnos eram calculados como 00h00
-        # antes de o main_sim sincronizar os relógios.
-        self._sim_start_time = time.time() - (8 * SIM_HOUR_SECONDS)
         profile = AGENT_REGISTRY.get(str(agent_jid), {})
         self._profile_cache = profile
-        self._shift_type = profile.get("shift", "morning")
         self._consult_mode = profile.get("consult_mode")
         self.consult_mode = self._consult_mode  # Public attribute for status reporting
         self.zone = profile.get("zone")
         self.specialty = profile.get("specialty")
-        self.on_shift = self.compute_shift_state()
         self.emergency_callable = True
         self.next_routine_slot_at = time.time()
-        self.current_assignment_type = None
         # Resultados assíncronos recebidos de MCDT/cirurgia, indexados por doente_jid.
         self.pending_exam_results = {}
         self.pending_surgery_results = {}
@@ -804,6 +797,18 @@ class AgenteMedico(ResourceAgent):
                         agent.sala_atual = data.get("sala_jid")
                         await self.agent.send_status(self)
                     agent.add_behaviour(agent.ScheduledSurgeryBehaviour(data, start_at))
+                    reply = msg.make_reply()
+                    reply.set_metadata("performative", "inform")
+                    reply.set_metadata("type", "reservation_confirmed")
+                    reply.body = json.dumps({
+                        "doente_jid": data.get("doente_jid"),
+                        "resource_jid": str(agent.jid),
+                        "resource_role": "medico",
+                        "slot_type": "surgery",
+                        "status": "confirmed",
+                    })
+                    reply.thread = data.get("doente_jid")
+                    await self.send(reply)
 
                 elif sender == coord_exam_name:
                     start_at = float(data.get("exam_start_at", time.time()))
@@ -819,6 +824,18 @@ class AgenteMedico(ResourceAgent):
                         agent.sala_atual = data.get("sala_jid")
                         await self.agent.send_status(self)
                     agent.add_behaviour(agent.ScheduledExamBehaviour(data, start_at))
+                    reply = msg.make_reply()
+                    reply.set_metadata("performative", "inform")
+                    reply.set_metadata("type", "reservation_confirmed")
+                    reply.body = json.dumps({
+                        "doente_jid": data.get("doente_jid"),
+                        "resource_jid": str(agent.jid),
+                        "resource_role": "medico",
+                        "slot_type": "exam",
+                        "status": "confirmed",
+                    })
+                    reply.thread = data.get("doente_jid")
+                    await self.send(reply)
 
                 elif sender == coord_int_name:
                     agent.disponivel = False

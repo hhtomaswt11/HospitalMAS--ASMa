@@ -225,6 +225,19 @@ class AgenteSala(ResourceAgent):
                         })
                         reply.thread = data.get("doente_jid")
                         await self.send(reply)
+                    elif start_at_key in ("exam_start_at", "surgery_start_at"):
+                        reply = msg.make_reply()
+                        reply.set_metadata("performative", "inform")
+                        reply.set_metadata("type", "reservation_confirmed")
+                        reply.body = json.dumps({
+                            "doente_jid": data.get("doente_jid"),
+                            "resource_jid": str(agent.jid),
+                            "resource_role": "sala",
+                            "slot_type": "exam" if start_at_key == "exam_start_at" else "surgery",
+                            "status": "confirmed",
+                        })
+                        reply.thread = data.get("doente_jid")
+                        await self.send(reply)
                 else:
                     agent.disponivel = False
                     agent.paciente_atual = data.get("doente_jid")

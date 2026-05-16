@@ -2,10 +2,10 @@ import asyncio
 import json
 import time
 
-from spade.agent import Agent
 from spade.behaviour import CyclicBehaviour
 from spade.message import Message
 
+from src.agents.Coordinators.coordenador_base import CoordenadorBase
 from src.config import *
 from src.scheduling import (
     find_next_routine_slot_for_pair,
@@ -15,17 +15,14 @@ from src.scheduling import (
 )
 
 
-class CoordenadorConsultas(Agent):
+class CoordenadorConsultas(CoordenadorBase):
 
     def __init__(self, agent_jid, password, hospital_config=None, **kwargs):
-        super().__init__(agent_jid, password, **kwargs)
-        cfg = hospital_config or H1_CONFIG
-        self.hospital_config = cfg
-        self._supervisor = cfg["supervisor"]
+        super().__init__(agent_jid, password, hospital_config=hospital_config, **kwargs)
+        cfg = self.hospital_config
         self._medicos = cfg["medicos_consultas_routine"]
         self._salas = cfg["salas_consultas_routine"]
         self._agent_registry = AGENT_REGISTRY
-        self._coord_name = str(agent_jid).split("@")[0]
         import time
         self._sim_start_time = time.time() - (8 * SIM_HOUR_SECONDS)
 
@@ -41,6 +38,8 @@ class CoordenadorConsultas(Agent):
             for r_jid in (self._medicos + self._salas)
         }
 
+        # Override da fila genérica do CoordenadorBase: consultas usam
+        # um dicionário por especialidade em vez de uma lista simples.
         self.pending_requests = {s: [] for s in ROUTINE_SPECIALTIES}
         self.pending_routine_patient_ids = set()
 
