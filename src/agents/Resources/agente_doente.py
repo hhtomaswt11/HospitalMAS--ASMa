@@ -6,6 +6,7 @@ from spade.behaviour import CyclicBehaviour, OneShotBehaviour
 from spade.message import Message
 
 from src.config import *
+from src.scheduling import sim_time_label
 
 class AgenteDoente(Agent):
     
@@ -19,6 +20,7 @@ class AgenteDoente(Agent):
         self.tipo_original = tipo_original or tipo_entrada
         self.especialidade = especialidade
         self.hospital_config = hospital_config  # set for Normal/Urgencia patients
+        self._sim_start_time = time.time() - (8 * SIM_HOUR_SECONDS)
 
     class SendRequestBehaviour(OneShotBehaviour):
         async def run(self):
@@ -98,6 +100,45 @@ class AgenteDoente(Agent):
                         "[AGENDA] Consulta marcada (horário indisponível no payload).",
                         "GREEN",
                     )
+                return
+
+            if msg_type == "allocation_confirmed":
+                proc = payload.get("procedure", "MCDT/Procedimento")
+                sala = payload.get("sala_jid", "?").split("@")[0]
+                med_raw = payload.get("medico_jid") or payload.get("enfermeiro_jid") or "?"
+                med = med_raw.split("@")[0]
+                
+                if proc == "exam":
+                    start_at = payload.get("exam_start_at")
+                    t_label = "agendado para breve"
+                    eta = 0.0
+                    if start_at:
+                        try:
+                            t_label = f"agendado para {sim_time_label(float(start_at), self.agent._sim_start_time)}"
+                            eta = max(0.0, float(start_at) - time.time())
+                        except Exception:
+                            pass
+                    log(self.agent.nome_doente,
+                        f"[SMS-NOTIFICAÇÃO] O seu exame de {payload.get('especialidade', 'MCDT')} foi {t_label} | "
+                        f"Sala={sala} | Médico={med} | ETA={eta:.1f}s", "CYAN")
+                elif proc == "surgery":
+                    start_at = payload.get("surgery_start_at")
+                    t_label = "agendada para breve"
+                    eta = 0.0
+                    if start_at:
+                        try:
+                            t_label = f"agendada para {sim_time_label(float(start_at), self.agent._sim_start_time)}"
+                            eta = max(0.0, float(start_at) - time.time())
+                        except Exception:
+                            pass
+                    log(self.agent.nome_doente,
+                        f"[SMS-NOTIFICAÇÃO] A sua cirurgia foi {t_label} | "
+                        f"Bloco={sala} | Cirurgião={med} | ETA={eta:.1f}s", "MAGENTA")
+                elif proc == "internment":
+                    dur = payload.get("duration", 0)
+                    log(self.agent.nome_doente,
+                        f"[SMS-NOTIFICAÇÃO] Internamento confirmado no Quarto {sala} | "
+                        f"Enfermeiro(a) responsável={med} | Duração prevista={dur}s (simulação)", "YELLOW")
                 return
 
             if msg_type == "discharge":

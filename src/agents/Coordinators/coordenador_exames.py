@@ -342,6 +342,20 @@ class CoordenadorExames(CoordenadorBase):
                     })
                     notif.thread = doente_jid
                     await self.send(notif)
+
+                if doente_jid:
+                    notif_doente = Message(to=doente_jid)
+                    notif_doente.set_metadata("performative", "inform")
+                    notif_doente.set_metadata("type", "allocation_confirmed")
+                    notif_doente.body = json.dumps({
+                        "procedure": "exam",
+                        "sala_jid": equipamento_proposta["sala_jid"],
+                        "medico_jid": medico_proposta["medico_jid"],
+                        "especialidade": exam_specialty,
+                        "exam_start_at": exam_start_at
+                    })
+                    notif_doente.thread = doente_jid
+                    await self.send(notif_doente)
                 return True
 
             await agent.reject_all(self, equipamento_propostas, "sala_jid", doente_jid, "Sem par médico/equipamento completo")

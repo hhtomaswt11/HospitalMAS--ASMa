@@ -288,6 +288,19 @@ class CoordenadorInternamento(CoordenadorBase):
                 notif.thread = doente_jid
                 await self.send(notif)
 
+            if doente_jid:
+                notif_doente = Message(to=doente_jid)
+                notif_doente.set_metadata("performative", "inform")
+                notif_doente.set_metadata("type", "allocation_confirmed")
+                notif_doente.body = json.dumps({
+                    "procedure": "internment",
+                    "sala_jid": room_proposal["sala_jid"],
+                    "enfermeiro_jid": nurse_proposal.get("enfermeiro_jid") if nurse_proposal else None,
+                    "duration": duration
+                })
+                notif_doente.thread = doente_jid
+                await self.send(notif_doente)
+
             log(agent._coord_name,
                 f"[INTERNAMENTO] {nome} admitido em {room_proposal.get('nome_sala', '?')} "
                 f"com {nurse_name} por {duration}s.", "YELLOW")
