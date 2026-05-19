@@ -15,132 +15,21 @@ def jid(name: str) -> str:
     return f"{name}@{XMPP_SERVER}"
 
 # ────────────────────────────────────────────────────────────
-#  Hospital 1 (H1) — original names kept for backward-compat
+#  Nomes base dos agentes
 # ────────────────────────────────────────────────────────────
-MEDICO1 = "medico1"
-MEDICO2 = "medico2"
-MEDICO3 = "medico3"
-MEDICO4 = "medico4"
-MEDICO5 = "medico5"
-MEDICO6 = "medico6"
-MEDICO7 = "medico7"
-MEDICO8 = "medico8"
-MEDICO9 = "medico9"
-MEDICO10 = "medico10"
-MEDICO11 = "medico11"
-MEDICO12 = "medico12"
-MEDICO13 = "medico13"
-MEDICO14 = "medico14"
-MEDICO15 = "medico15"
-
-MEDICO_TRIAGEM1 = "medico_triagem1"
-MEDICO_TRIAGEM2 = "medico_triagem2"
-
-SALA1 = "sala1"
-SALA2 = "sala2"
-SALA3 = "sala3"
-SALA4 = "sala4"
-SALA5 = "sala5"
-SALA6 = "sala6"
-SALA7 = "sala7"
-SALA8 = "sala8"
-SALA9 = "sala9"
-SALA10 = "sala10"
-
-ENFERMEIRO1 = "enfermeiro1"
-ENFERMEIRO2 = "enfermeiro2"
-ENFERMEIRO3 = "enfermeiro3"
-
-H2_ENFERMEIRO1 = "h2_enfermeiro1"
-H2_ENFERMEIRO2 = "h2_enfermeiro2"
-H2_ENFERMEIRO3 = "h2_enfermeiro3"
-
-COORD_CONS = "coord_consultas"
-COORD_URG = "coord_urgencias"
-COORD_EXAM = "coord_exames"
-COORD_CIR = "coord_cirurgias"
-COORD_TRI = "coord_triagem"
-COORD_INT = "coord_internamento"
+# Mantido como fallback histórico em alguns agentes/fluxos.
 SUPERVISOR = "supervisor"
 
-SALA_TRIAGEM1 = "sala_triagem1"
-SALA_TRIAGEM2 = "sala_triagem2"
 
-INTERNAMENTO1 = "internamento1"
-INTERNAMENTO2 = "internamento2"
-INTERNAMENTO3 = "internamento3"
-INTERNAMENTO4 = "internamento4"
+def numbered_names(prefix: str, base: str, start: int, end: int) -> list[str]:
+    """Gera nomes de agentes no formato '<prefix><base><n>'."""
+    return [f"{prefix}{base}{i}" for i in range(start, end + 1)]
 
-SALA_RAIOX1 = "sala_raiox1"
-SALA_RAIOX2 = "sala_raiox2"
-SALA_TAC1 = "sala_tac1"
-SALA_TAC2 = "sala_tac2"
-SALA_ANALISES1 = "sala_analises1"
-SALA_ANALISES2 = "sala_analises2"
 
-BLOCO_OPERATORIO1 = "bloco_operatorio1"
-BLOCO_OPERATORIO2 = "bloco_operatorio2"
-BLOCO_OPERATORIO3 = "bloco_operatorio3"
+def prefixed(prefix: str, name: str) -> str:
+    """Aplica o prefixo do hospital a um nome lógico de agente/recurso."""
+    return f"{prefix}{name}"
 
-# ────────────────────────────────────────────────────────────
-#  Hospital 2 (H2) — h2_ prefix
-# ────────────────────────────────────────────────────────────
-H2_MEDICO1 = "h2_medico1"
-H2_MEDICO2 = "h2_medico2"
-H2_MEDICO3 = "h2_medico3"
-H2_MEDICO4 = "h2_medico4"
-H2_MEDICO5 = "h2_medico5"
-H2_MEDICO6 = "h2_medico6"
-H2_MEDICO7 = "h2_medico7"
-H2_MEDICO8 = "h2_medico8"
-H2_MEDICO9 = "h2_medico9"
-H2_MEDICO10 = "h2_medico10"
-H2_MEDICO11 = "h2_medico11"
-H2_MEDICO12 = "h2_medico12"
-H2_MEDICO13 = "h2_medico13"
-H2_MEDICO14 = "h2_medico14"
-H2_MEDICO15 = "h2_medico15"
-
-H2_MEDICO_TRIAGEM1 = "h2_medico_triagem1"
-H2_MEDICO_TRIAGEM2 = "h2_medico_triagem2"
-
-H2_SALA1 = "h2_sala1"
-H2_SALA2 = "h2_sala2"
-H2_SALA3 = "h2_sala3"
-H2_SALA4 = "h2_sala4"
-H2_SALA5 = "h2_sala5"
-H2_SALA6 = "h2_sala6"
-H2_SALA7 = "h2_sala7"
-H2_SALA8 = "h2_sala8"
-H2_SALA9 = "h2_sala9"
-H2_SALA10 = "h2_sala10"
-
-H2_COORD_CONS = "h2_coord_consultas"
-H2_COORD_URG = "h2_coord_urgencias"
-H2_COORD_EXAM = "h2_coord_exames"
-H2_COORD_CIR = "h2_coord_cirurgias"
-H2_COORD_TRI = "h2_coord_triagem"
-H2_COORD_INT = "h2_coord_internamento"
-H2_SUPERVISOR = "h2_supervisor"
-
-H2_SALA_TRIAGEM1 = "h2_sala_triagem1"
-H2_SALA_TRIAGEM2 = "h2_sala_triagem2"
-
-H2_INTERNAMENTO1 = "h2_internamento1"
-H2_INTERNAMENTO2 = "h2_internamento2"
-H2_INTERNAMENTO3 = "h2_internamento3"
-H2_INTERNAMENTO4 = "h2_internamento4"
-
-H2_SALA_RAIOX1 = "h2_sala_raiox1"
-H2_SALA_RAIOX2 = "h2_sala_raiox2"
-H2_SALA_TAC1 = "h2_sala_tac1"
-H2_SALA_TAC2 = "h2_sala_tac2"
-H2_SALA_ANALISES1 = "h2_sala_analises1"
-H2_SALA_ANALISES2 = "h2_sala_analises2"
-
-H2_BLOCO_OPERATORIO1 = "h2_bloco_operatorio1"
-H2_BLOCO_OPERATORIO2 = "h2_bloco_operatorio2"
-H2_BLOCO_OPERATORIO3 = "h2_bloco_operatorio3"
 
 # ────────────────────────────────────────────────────────────
 #  Central / Unified triage agent
@@ -280,6 +169,10 @@ LOAD_QUERY_RESPONSE_WAIT_SECONDS = 3  # timeout to collect load_query responses
 SIM_INFRA_READY_WAIT_SECONDS = 2
 SIM_PROGRESS_TICK_SECONDS = 5
 
+# Por defeito o dashboard é lançado manualmente, como descrito no README.
+# Definir AUTO_START_DASHBOARD=1 permite voltar ao comportamento antigo.
+AUTO_START_DASHBOARD = os.getenv("AUTO_START_DASHBOARD", "0").lower() in {"1", "true", "yes", "sim"}
+
 # Probabilidades de Fluxo Clínico
 PROB_EXAM_URGENT = 0.8  # 80% dos urgentes vão a exame
 PROB_EXAM_NORMAL = 0.2  # 20% dos de rotina vão a exame
@@ -355,47 +248,54 @@ def build_hospital_config(
 # ── Hospital 1 config ──
 H1_CONFIG = build_hospital_config(
     supervisor_name=SUPERVISOR,
-    coord_cons_name=COORD_CONS, coord_urg_name=COORD_URG,
-    coord_exam_name=COORD_EXAM, coord_cir_name=COORD_CIR,
-    coord_tri_name=COORD_TRI, coord_int_name=COORD_INT,
-    medicos_names=[f"medico{i}" for i in range(1, 31)],
-    medicos_triagem_names=[f"medico_triagem{i}" for i in range(1, 4)],
+    coord_cons_name="coord_consultas", coord_urg_name="coord_urgencias",
+    coord_exam_name="coord_exames", coord_cir_name="coord_cirurgias",
+    coord_tri_name="coord_triagem", coord_int_name="coord_internamento",
+    medicos_names=numbered_names("", "medico", 1, 30),
+    medicos_triagem_names=numbered_names("", "medico_triagem", 1, 3),
     medicos_consultas_routine_names=[f"medico{i}" for i in [1, 2, 3, 12, 13, 14]],
     medicos_consultas_emergency_names=[f"medico{i}" for i in [4, 5, 6, 15, 16, 17, 23, 24, 25]],
-    salas_consultas_routine_names=[SALA1, SALA2, SALA3, SALA4, SALA5, SALA6, SALA7],
-    salas_consultas_emergency_names=[SALA8, SALA9, SALA10],
+    salas_consultas_routine_names=numbered_names("", "sala", 1, 7),
+    salas_consultas_emergency_names=numbered_names("", "sala", 8, 10),
     equipamentos_map=[
-        (SALA_RAIOX1, SPECIALTY_RX), (SALA_RAIOX2, SPECIALTY_RX),
-        (SALA_TAC1, SPECIALTY_TAC), (SALA_TAC2, SPECIALTY_TAC),
-        (SALA_ANALISES1, SPECIALTY_ANALISES), (SALA_ANALISES2, SPECIALTY_ANALISES),
+        ("sala_raiox1", SPECIALTY_RX), ("sala_raiox2", SPECIALTY_RX),
+        ("sala_tac1", SPECIALTY_TAC), ("sala_tac2", SPECIALTY_TAC),
+        ("sala_analises1", SPECIALTY_ANALISES), ("sala_analises2", SPECIALTY_ANALISES),
     ],
-    blocos_names=[BLOCO_OPERATORIO1, BLOCO_OPERATORIO2, BLOCO_OPERATORIO3],
-    salas_triagem_names=[SALA_TRIAGEM1, SALA_TRIAGEM2],
-    internamento_names=[INTERNAMENTO1, INTERNAMENTO2, INTERNAMENTO3, INTERNAMENTO4],
-    enfermeiros_names=[f"enfermeiro{i}" for i in range(1, 7)],
+    blocos_names=numbered_names("", "bloco_operatorio", 1, 3),
+    salas_triagem_names=numbered_names("", "sala_triagem", 1, 2),
+    internamento_names=numbered_names("", "internamento", 1, 4),
+    enfermeiros_names=numbered_names("", "enfermeiro", 1, 6),
 )
 
 # ── Hospital 2 config ──
+H2_PREFIX = "h2_"
 H2_CONFIG = build_hospital_config(
-    supervisor_name=H2_SUPERVISOR,
-    coord_cons_name=H2_COORD_CONS, coord_urg_name=H2_COORD_URG,
-    coord_exam_name=H2_COORD_EXAM, coord_cir_name=H2_COORD_CIR,
-    coord_tri_name=H2_COORD_TRI, coord_int_name=H2_COORD_INT,
-    medicos_names=[f"h2_medico{i}" for i in range(1, 31)],
-    medicos_triagem_names=[f"h2_medico_triagem{i}" for i in range(1, 4)],
-    medicos_consultas_routine_names=[f"h2_medico{i}" for i in [1, 2, 3, 12, 13, 14]],
-    medicos_consultas_emergency_names=[f"h2_medico{i}" for i in [4, 5, 6, 15, 16, 17, 23, 24, 25]],
-    salas_consultas_routine_names=[H2_SALA1, H2_SALA2, H2_SALA3, H2_SALA4, H2_SALA5, H2_SALA6, H2_SALA7],
-    salas_consultas_emergency_names=[H2_SALA8, H2_SALA9, H2_SALA10],
+    supervisor_name=prefixed(H2_PREFIX, "supervisor"),
+    coord_cons_name=prefixed(H2_PREFIX, "coord_consultas"),
+    coord_urg_name=prefixed(H2_PREFIX, "coord_urgencias"),
+    coord_exam_name=prefixed(H2_PREFIX, "coord_exames"),
+    coord_cir_name=prefixed(H2_PREFIX, "coord_cirurgias"),
+    coord_tri_name=prefixed(H2_PREFIX, "coord_triagem"),
+    coord_int_name=prefixed(H2_PREFIX, "coord_internamento"),
+    medicos_names=numbered_names(H2_PREFIX, "medico", 1, 30),
+    medicos_triagem_names=numbered_names(H2_PREFIX, "medico_triagem", 1, 3),
+    medicos_consultas_routine_names=[prefixed(H2_PREFIX, f"medico{i}") for i in [1, 2, 3, 12, 13, 14]],
+    medicos_consultas_emergency_names=[prefixed(H2_PREFIX, f"medico{i}") for i in [4, 5, 6, 15, 16, 17, 23, 24, 25]],
+    salas_consultas_routine_names=numbered_names(H2_PREFIX, "sala", 1, 7),
+    salas_consultas_emergency_names=numbered_names(H2_PREFIX, "sala", 8, 10),
     equipamentos_map=[
-        (H2_SALA_RAIOX1, SPECIALTY_RX), (H2_SALA_RAIOX2, SPECIALTY_RX),
-        (H2_SALA_TAC1, SPECIALTY_TAC), (H2_SALA_TAC2, SPECIALTY_TAC),
-        (H2_SALA_ANALISES1, SPECIALTY_ANALISES), (H2_SALA_ANALISES2, SPECIALTY_ANALISES),
+        (prefixed(H2_PREFIX, "sala_raiox1"), SPECIALTY_RX),
+        (prefixed(H2_PREFIX, "sala_raiox2"), SPECIALTY_RX),
+        (prefixed(H2_PREFIX, "sala_tac1"), SPECIALTY_TAC),
+        (prefixed(H2_PREFIX, "sala_tac2"), SPECIALTY_TAC),
+        (prefixed(H2_PREFIX, "sala_analises1"), SPECIALTY_ANALISES),
+        (prefixed(H2_PREFIX, "sala_analises2"), SPECIALTY_ANALISES),
     ],
-    blocos_names=[H2_BLOCO_OPERATORIO1, H2_BLOCO_OPERATORIO2, H2_BLOCO_OPERATORIO3],
-    salas_triagem_names=[H2_SALA_TRIAGEM1, H2_SALA_TRIAGEM2],
-    internamento_names=[H2_INTERNAMENTO1, H2_INTERNAMENTO2, H2_INTERNAMENTO3, H2_INTERNAMENTO4],
-    enfermeiros_names=[f"h2_enfermeiro{i}" for i in range(1, 7)],
+    blocos_names=numbered_names(H2_PREFIX, "bloco_operatorio", 1, 3),
+    salas_triagem_names=numbered_names(H2_PREFIX, "sala_triagem", 1, 2),
+    internamento_names=numbered_names(H2_PREFIX, "internamento", 1, 4),
+    enfermeiros_names=numbered_names(H2_PREFIX, "enfermeiro", 1, 6),
 )
 
 # ────────────────────────────────────────────────────────────

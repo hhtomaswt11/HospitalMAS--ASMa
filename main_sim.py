@@ -241,28 +241,39 @@ def cleanup_state():
             try:
                 os.remove(p)
                 log("SIMULATOR", f"Cleaned up stale file: {f}", "CYAN")
-            except:
-                pass
+            except Exception as e:
+                log("SIMULATOR", f"[WARN] Não foi possível remover {f}: {e}", "YELLOW")
 
 
 async def main():
     log_file, log_path = setup_output_file()
-    cleanup_state()
-    
-    print("\n" + "=" * 70)
-    print("  SISTEMA MULTIAGENTE — SIMULAÇÃO HOSPITALAR MULTI-HOSPITAL")
-    print("  Hospitais: H1 + H2 | Triagem Central Unificada")
-    print(f"  Duração: {SIMULATION_DURATION}s | P(Triagem Central)={PROB_CENTRAL_TRIAGE:.0%}")
-    print("=" * 70 + "\n")
-
-    # 1. Dashboard
-    dashboard_path = os.path.join(os.path.dirname(__file__), "dashboard.py")
-    dashboard_proc = subprocess.Popen([sys.executable, dashboard_path])
-
+    dashboard_proc = None
     agents = []
     tasks = []
 
     try:
+        cleanup_state()
+
+        print("\n" + "=" * 70)
+        print("  SISTEMA MULTIAGENTE — SIMULAÇÃO HOSPITALAR MULTI-HOSPITAL")
+        print("  Hospitais: H1 + H2 | Triagem Central Unificada")
+        print(f"  Duração: {SIMULATION_DURATION}s | P(Triagem Central)={PROB_CENTRAL_TRIAGE:.0%}")
+        print("=" * 70 + "\n")
+
+        # 1. Dashboard
+        # Por defeito o dashboard deve ser lançado num terminal separado, como no README.
+        # Para reativar o arranque automático: AUTO_START_DASHBOARD=1 python3 main_sim.py
+        if AUTO_START_DASHBOARD:
+            dashboard_path = os.path.join(os.path.dirname(__file__), "dashboard.py")
+            dashboard_proc = subprocess.Popen([sys.executable, dashboard_path])
+            log("SIMULATOR", "Dashboard iniciado automaticamente.", "CYAN")
+        else:
+            log(
+                "SIMULATOR",
+                "Dashboard em modo manual. Para o abrir, corre `python3 dashboard.py` noutro terminal.",
+                "CYAN",
+            )
+
         # 2. Start Hospital 1
         await start_hospital(H1_CONFIG, agents, hospital_id=1)
 
@@ -316,29 +327,38 @@ async def main():
         import traceback
         traceback.print_exc()
     finally:
-        # 7. Shutdown
-        for t in tasks:
-            t.cancel()
+        try:
+            # 7. Shutdown
+            for t in tasks:
+                t.cancel()
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
 
-        log("SIMULATOR", f"Closing hospitals. Discharging {len(agents)} active agents...", "BOLD")
-        
-        # Stop patients first (they are often the ones sending msgs)
-        active_agents = list(agents) # Copy to avoid mutation issues
-        for a in reversed(active_agents):
-            try:
-                await a.stop()
-            except:
-                pass
-
-        if dashboard_proc:
-            dashboard_proc.terminate()
+            log("SIMULATOR", f"Closing hospitals. Discharging {len(agents)} active agents...", "BOLD")
             
-        print("=" * 70)
-        print("  SIMULAÇÃO CONCLUÍDA")
-    print("=" * 70 + "\n")
+            # Stop patients first (they are often the ones sending msgs)
+            active_agents = list(agents)  # Copy to avoid mutation issues
+            for a in reversed(active_agents):
+                try:
+                    await a.stop()
+                except Exception as e:
+                    agent_id = getattr(a, "jid", repr(a))
+                    log("SIMULATOR", f"[SHUTDOWN-WARN] Falha ao parar {agent_id}: {e}", "YELLOW")
 
-    teardown_output_file(log_file, log_path)
-
+            if dashboard_proc:
+                dashboard_proc.terminate()
+                try:
+                    dashboard_proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    log("SIMULATOR", "Dashboard não terminou a tempo; a forçar encerramento.", "YELLOW")
+                    dashboard_proc.kill()
+                    dashboard_proc.wait(timeout=5)
+                    
+            print("=" * 70)
+            print("  SIMULAÇÃO CONCLUÍDA")
+            print("=" * 70 + "\n")
+        finally:
+            teardown_output_file(log_file, log_path)
 
 if __name__ == "__main__":
     try:
