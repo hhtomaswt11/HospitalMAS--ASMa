@@ -25,6 +25,7 @@
             --warning: #f59e0b;
             --accent-cyan: #06b6d4;
             --accent-pink: #d946ef;
+            --accent-purple: #8b5cf6;
             --h1-color: #3b82f6;
             --h2-color: #a855f7;
             --central-color: #f59e0b;
@@ -145,6 +146,7 @@
 
         .header-meta {
             display: flex;
+            align-items: center;
             gap: 1.5rem;
             font-size: 0.8rem;
             color: var(--text-muted);
@@ -329,6 +331,9 @@
             border-radius: 0.75rem;
             padding: 0.6rem;
             background: rgba(2, 6, 23, 0.25);
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
         }
 
         .queue-group-title {
@@ -372,7 +377,7 @@
 
         .rooms-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
             gap: 1.5rem;
         }
 
@@ -388,6 +393,11 @@
             transition: all 0.3s ease;
             width: 100%;
             flex-shrink: 0;
+            overflow: hidden;
+        }
+
+        .slot .entity-card {
+            height: 100%;
         }
 
         .avatar {
@@ -493,7 +503,7 @@
 
         .hours-fill {
             height: 100%;
-            background: linear-gradient(to right, var(--accent-cyan), var(--accent-purple));
+            background: var(--warning);
             border-radius: 999px;
             transition: width 0.4s ease;
         }
@@ -514,7 +524,7 @@
             display: flex;
             flex-direction: column;
             gap: 0.75rem;
-            min-height: 140px;
+            min-height: 180px;
         }
 
         .room-header {
@@ -535,26 +545,24 @@
         }
 
         .slot {
-            width: 180px;
-            height: 70px;
+            width: 220px;
+            max-width: 100%;
+            min-width: 0;
+            height: 110px;
             border: 1px dashed rgba(255, 255, 255, 0.05);
             background: rgba(0, 0, 0, 0.1);
-            border-radius: 8px;
+            border-radius: 0.75rem;
             display: flex;
             align-items: center;
             justify-content: center;
             position: relative;
-            overflow: hidden;
         }
 
-        .slot::before {
-            content: attr(data-label);
-            position: absolute;
-            top: -12px;
-            font-size: 0.5rem;
-            color: var(--text-muted);
-            text-transform: uppercase;
+        .slot:has(.entity-card) {
+            border: none;
+            background: transparent;
         }
+
 
         footer {
             height: 110px;
@@ -918,6 +926,8 @@
         }
 
         function createEntityEntry(jid, info, type, isInteracting = false, showQueueSpecialty = false, resourceState = null) {
+            let name = info.name || jid.split('@')[0];
+            name = name.replace(/^\[H\d+\]\s*/i, '');
             const isEmergency = isUrgentInfo(jid, info);
             let subtitle = info.type || (type === 'medic' ? 'Profissional' : 'S/ Ref');
             if (type === 'medic') subtitle = formatSpecialty(info.specialty) || info.type || 'Profissional';
@@ -952,11 +962,9 @@
                 const used = Number(resourceState.weekly_hours_used || 0);
                 const max = Number(resourceState.max_weekly_hours || 40);
                 const pct = max > 0 ? Math.max(0, Math.min(100, (used / max) * 100)) : 0;
-                const assignment = (resourceState.current_assignment_type || '').replace('_reserved', ' reservado');
                 const agendaCount = Number(resourceState.agenda_count || 0);
-                let state = resourceState.disponivel === false ? 'Ocupado' : 'Livre';
-                if (assignment) state = assignment;
-                if (agendaCount > 0) state += ` • ${agendaCount} marc.`;
+                let state = '';
+                if (agendaCount > 0) state = `${agendaCount} marc.`;
                 hoursRow = `
                     <div class="hours-row">
                         <div class="hours-row-label">
@@ -977,7 +985,7 @@
                         ${(type === 'medic' || type === 'nurse') ? ICONS.medic : ICONS.patient}
                     </div>
                     <div class="entity-info">
-                        <div class="entity-name">${info.name || jid.split('@')[0]}</div>
+                        <div class="entity-name">${name}</div>
                         <div class="entity-type">${subtitle}</div>
                         ${consultModeBadge}
                         ${scheduleBadge}
@@ -1088,9 +1096,9 @@
                             <span style="color:${isOccupied ? 'var(--error)' : 'var(--success)'}">${isOccupied ? 'OCUPADA' : 'LIVRE'}</span>
                         </div>
                         <div class="room-slots">
-                            <div class="slot" data-label="Paciente">${patientHtml}</div>
-                            <div style="font-size:0.7rem;color:var(--text-muted);opacity:0.5;">●</div>
-                            <div class="slot" data-label="Profissional">${medicHtml}</div>
+                            <div class="slot">${patientHtml}</div>
+                            <div style="font-size:0.7rem;color:var(--text-muted);opacity:0.5;margin:0 0.5rem;flex-shrink:0;">●</div>
+                            <div class="slot">${medicHtml}</div>
                         </div>
                     </div>`;
                 if (roomInfo.wing === 'primary') {
