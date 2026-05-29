@@ -32,7 +32,6 @@ class AgenteTriagem(ResourceAgent):
             nome = self.data.get("nome", "?")
             doente_jid = self.data.get("doente_jid")
 
-            await self.agent.send_status(self)
             log(self.agent.nome_medico, f"[TRIAGEM] A classificar urgencia para {nome}.", "YELLOW")
 
             await asyncio.sleep(TRIAGE_CLASSIFICATION_SECONDS)
@@ -108,6 +107,7 @@ class AgenteTriagem(ResourceAgent):
                 self.agent.disponivel = False
                 self.agent.paciente_atual = data.get("doente_jid")
                 self.agent.sala_triagem = data.get("sala_jid")
+                await self.agent.send_status(self)
                 self.agent.add_behaviour(self.agent.ClassifyUrgentPatientBehaviour(data))
 
             elif performative == "reject-proposal":

@@ -9,6 +9,7 @@ Centraliza atributos e lógica comum:
 """
 import json
 import time
+import asyncio
 
 from spade.agent import Agent
 from spade.message import Message
@@ -105,7 +106,6 @@ class CoordenadorBase(Agent):
         Returns:
             (all_confirmed: bool, confirmed_set: set of resource JIDs)
         """
-        import asyncio
         confirmed = set()
         expected = set(expected_jids)
         loop = asyncio.get_running_loop()
@@ -135,3 +135,53 @@ class CoordenadorBase(Agent):
                 await oob_handler(reply)
 
         return confirmed == expected, confirmed
+
+    def select_best_resource_pair(self, medico_propostas, sala_propostas, patient_data):
+        """Seleciona a melhor combinação de médico e sala (bloco ou equipamento),
+        respeitando a prioridade de urgência para preempção de exames/cirurgias de rotina.
+        
+        Returns:
+            (medico_proposta, sala_proposta, start_at, preempt_medico, preempt_sala)
+        """
+        if not medico_propostas or not sala_propostas:
+            return None, None, None, None, None
+
+        now = time.time()
+        is_urgent = patient_data.get("tipo_original") != "Normal" and patient_data.get("tipo") != "Normal"
+
+        def _slot_at(proposta, use_urgency=False):
+            slot = proposta.get("slot_at_urgency" if use_urgency else "slot_at", proposta.get("slot_at"))
+            try:
+                return float(slot)
+            except Exception:
+                return now
+
+        def _score(proposta, use_urgency=False):
+            return proposta.get("score_urgency" if use_urgency else "score", proposta.get("score", 999))
+
+        best = None
+
+        for m_prop in medico_propostas:
+            for s_prop in sala_propostas:
+                start_at = max(_slot_at(m_prop), _slot_at(s_prop))
+                combined_score = _score(m_prop) + _score(s_prop)
+                key = (start_at, combined_score)
+                if best is None or key < best[0]:
+                    best = (key, m_prop, s_prop, start_at, None, None)
+                    
+                if is_urgent:
+                    u_start_at = max(_slot_at(m_prop, True), _slot_at(s_prop, True))
+                    u_combined_score = _score(m_prop, True) + _score(s_prop, True)
+                    if u_start_at < start_at:
+                        u_key = (u_start_at, u_combined_score)
+                        preempt_m = m_prop.get("preempt_target")
+                        preempt_s = s_prop.get("preempt_target")
+                        if best is None or u_key < best[0]:
+                            best = (u_key, m_prop, s_prop, u_start_at, preempt_m, preempt_s)
+
+        if best:
+            _, m_prop, s_prop, start_at, preempt_m, preempt_s = best
+            return m_prop, s_prop, start_at, preempt_m, preempt_s
+            
+        return None, None, None, None, None
+

@@ -13,6 +13,7 @@ DiagnoseAndRouteBehaviour.
 import asyncio
 import json
 import random
+import time
 
 from spade.agent import Agent
 from spade.behaviour import CyclicBehaviour, OneShotBehaviour
@@ -29,7 +30,6 @@ class AgenteTriagemGeral(Agent):
         self.hospital_configs = hospital_configs or [H1_CONFIG, H2_CONFIG]
         # Per-patient queues: doente_jid -> asyncio.Queue of load_response dicts
         self.pending_load_responses: dict = {}
-        import time
         self._sim_start_time = time.time() - (8 * SIM_HOUR_SECONDS)
 
     class DiagnoseAndRouteBehaviour(OneShotBehaviour):
@@ -67,7 +67,6 @@ class AgenteTriagemGeral(Agent):
             especialidade = self.data["especialidade"]
             # 1.5 Check if we can route routine patients at this hour
             if tipo == "Normal":
-                import time
                 elapsed = time.time() - self.agent._sim_start_time
                 current_hour = (elapsed % SIM_DAY_SECONDS) / SIM_HOUR_SECONDS
                 if not (ROUTINE_START_H <= current_hour < ROUTINE_END_H):

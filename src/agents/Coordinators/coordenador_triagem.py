@@ -41,19 +41,7 @@ class CoordenadorTriagem(CoordenadorBase):
                     log(self.agent._coord_name,
                         f"[TRIAGEM] Pedido duplicado ignorado: {data.get('nome', '?')}", "YELLOW")
 
-            # ── Load-query from the Central Triage Agent ──
-            elif performative == "cfp" and msg_type == "load_query":
-                reply = msg.make_reply()
-                reply.set_metadata("performative", "propose")
-                reply.set_metadata("type", "load_response")
-                reply.body = json.dumps({
-                    "specialty_load": 0,  # Triage doesn't have specialty queues yet
-                    "total_load": self.agent.total_pending(),
-                    "coord_jid": str(self.agent.jid),
-                    "coord_tri": str(self.agent.jid),
-                    "coord_urg": self.agent._coord_urg,
-                })
-                await self.send(reply)
+
 
         async def publish_waitlist(self):
             msg = Message(to=self.agent._supervisor)

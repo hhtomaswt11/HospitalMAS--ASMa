@@ -202,44 +202,11 @@ class CoordenadorExames(CoordenadorBase):
                         medico_propostas.append(body)
 
             now = time.time()
-            equipamento_proposta = None
-            medico_proposta = None
-            exam_start_at = now
-
-            if equipamento_propostas and medico_propostas:
-                def _slot_at(proposta, use_urgency=False):
-                    slot = proposta.get("slot_at_urgency" if use_urgency else "slot_at", proposta.get("slot_at"))
-                    try:
-                        return float(slot)
-                    except Exception:
-                        return now
-
-                def _score(proposta, use_urgency=False):
-                    return proposta.get("score_urgency" if use_urgency else "score", proposta.get("score", 999))
-
-                best = None
-                is_urgent = patient_data.get("tipo_original") != "Normal" and patient_data.get("tipo") != "Normal"
-
-                for m_prop in medico_propostas:
-                    for eq_prop in equipamento_propostas:
-                        start_at = max(_slot_at(m_prop), _slot_at(eq_prop))
-                        combined_score = _score(m_prop) + _score(eq_prop)
-                        key = (start_at, combined_score)
-                        if best is None or key < best[0]:
-                            best = (key, m_prop, eq_prop, start_at, None, None)
-                            
-                        if is_urgent:
-                            u_start_at = max(_slot_at(m_prop, True), _slot_at(eq_prop, True))
-                            u_combined_score = _score(m_prop, True) + _score(eq_prop, True)
-                            if u_start_at < start_at:
-                                u_key = (u_start_at, u_combined_score)
-                                preempt_m = m_prop.get("preempt_target")
-                                preempt_eq = eq_prop.get("preempt_target")
-                                if best is None or u_key < best[0]:
-                                    best = (u_key, m_prop, eq_prop, u_start_at, preempt_m, preempt_eq)
-
-                if best:
-                    _, medico_proposta, equipamento_proposta, exam_start_at, preempt_m, preempt_eq = best
+            medico_proposta, equipamento_proposta, exam_start_at, preempt_m, preempt_eq = (
+                self.agent.select_best_resource_pair(medico_propostas, equipamento_propostas, patient_data)
+            )
+            if exam_start_at is None:
+                exam_start_at = now
 
             if equipamento_proposta and medico_proposta:
                 preempted_set = set()

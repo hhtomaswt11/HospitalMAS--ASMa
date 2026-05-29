@@ -22,8 +22,6 @@ class CoordenadorConsultas(CoordenadorBase):
         cfg = self.hospital_config
         self._medicos = cfg["medicos_consultas_routine"]
         self._salas = cfg["salas_consultas_routine"]
-        self._agent_registry = AGENT_REGISTRY
-        import time
         self._sim_start_time = time.time() - (8 * SIM_HOUR_SECONDS)
 
         # Alocações por doente, mantendo estado explícito da consulta.
@@ -350,21 +348,7 @@ class CoordenadorConsultas(CoordenadorBase):
             })
             await self.send(msg)
 
-        async def send_load_response(self, msg, req_data):
-            requested_specialty = req_data.get("especialidade")
-            metrics = self.agent.get_routine_load_metrics(requested_specialty)
 
-            reply = msg.make_reply()
-            reply.set_metadata("performative", "propose")
-            reply.set_metadata("type", "load_response")
-            reply.body = json.dumps({
-                **metrics,
-                "coord_jid": str(self.agent.jid),
-                "coord_cons": str(self.agent.jid),
-                "coord_urg": self.agent.hospital_config["coord_urg"],
-                "coord_tri": self.agent.hospital_config["coord_tri"],
-            })
-            await self.send(reply)
 
         async def collect_routine_reservation_confirmations(self, doente_jid, expected_resources):
             """Wait for explicit doctor+room reservation confirmations.
@@ -492,10 +476,7 @@ class CoordenadorConsultas(CoordenadorBase):
                 data = json.loads(msg.body)
                 await self.process_routine_finished(data, dispatch_after=True)
 
-            # ── Load-query from the Central Triage Agent ──
-            elif performative == "cfp" and msg_type == "load_query":
-                req_data = json.loads(msg.body)
-                await self.send_load_response(msg, req_data)
+
 
         async def handle_out_of_band_message(self, msg):
             performative = msg.get_metadata("performative")
@@ -516,10 +497,7 @@ class CoordenadorConsultas(CoordenadorBase):
                 await self.process_routine_finished(data, dispatch_after=False)
                 return
 
-            if performative == "cfp" and msg_type == "load_query":
-                data = json.loads(msg.body)
-                await self.send_load_response(msg, data)
-                return
+
 
             if msg_type in {"reservation_confirmed", "reservation_refused"}:
                 # Confirmation for another patient or already handled reservation;
@@ -538,8 +516,6 @@ class CoordenadorConsultas(CoordenadorBase):
                 dispatched += 1
 
         async def dispatch_next_routine(self):
-            # Verificação rigorosa de horário
-            import time
             elapsed = time.time() - self.agent._sim_start_time
             current_hour = (elapsed % SIM_DAY_SECONDS) / SIM_HOUR_SECONDS
             

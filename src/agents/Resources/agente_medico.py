@@ -139,14 +139,9 @@ class AgenteMedico(ResourceAgent):
                         preempt_target = earliest.get("doente_jid")
                         slot_at_urgency = float(earliest[start_key])
 
-        profile = self.get_profile()
-        is_nurse = profile.get("role") == "nurse"
-        
         return {
             "medico_jid": str(self.jid),
             "nome_medico": self.nome_medico,
-            "enfermeiro_jid": str(self.jid) if is_nurse else None,
-            "nome_enfermeiro": self.nome_medico if is_nurse else None,
             "slot": "next_available",
             "slot_at": slot_at,
             "slot_at_urgency": slot_at_urgency,
@@ -509,44 +504,7 @@ class AgenteMedico(ResourceAgent):
             self.agent.clear_assignment()
             await self.agent.send_status(self)
 
-    class ManageInternmentBehaviour(OneShotBehaviour):
-        def __init__(self, data):
-            super().__init__()
-            self.data = data
 
-        async def run(self):
-            sala_jid = self.data.get("sala_jid")
-            nome = self.data.get("nome", "?")
-            duration = int(self.data.get("duration", INTERNAMENTO_MIN_SECONDS))
-
-            log(self.agent.nome_medico,
-                f"[INTERNAMENTO] {nome} internado por {duration}s em {sala_jid}.", "YELLOW")
-            await asyncio.sleep(duration)
-
-            if sala_jid:
-                msg_release = Message(to=sala_jid)
-                msg_release.set_metadata("performative", "inform")
-                msg_release.set_metadata("type", "release")
-                msg_release.thread = self.data.get("doente_jid")
-                await self.send(msg_release)
-
-            self.agent.clear_assignment()
-            await self.agent.send_status(self)
-
-            done = Message(to=self.agent._coord_int)
-            done.set_metadata("performative", "inform")
-            done.set_metadata("type", "internment_finished")
-            done.body = json.dumps({"doente_jid": self.data.get("doente_jid"), "nome": nome})
-            done.thread = self.data.get("doente_jid")
-            await self.send(done)
-            log(self.agent.nome_medico, f"[INTERNAMENTO] Alta automatica concluida para {nome}.", "GREEN")
-
-            msg_discharge = Message(to=self.data.get("doente_jid"))
-            msg_discharge.set_metadata("performative", "inform")
-            msg_discharge.set_metadata("type", "discharge")
-            msg_discharge.body = json.dumps({"estado": "Alta de internamento"})
-            msg_discharge.thread = self.data.get("doente_jid")
-            await self.send(msg_discharge)
 
     class ScheduledConsultationBehaviour(OneShotBehaviour):
         def __init__(self, patient_data, start_at):
@@ -725,7 +683,6 @@ class AgenteMedico(ResourceAgent):
                 coord_urg_name = agent._coord_urg.split("@")[0]
                 coord_cir_name = agent._coord_cir.split("@")[0]
                 coord_exam_name = agent._coord_exam.split("@")[0]
-                coord_int_name = agent._coord_int.split("@")[0] if hasattr(agent, '_coord_int') else ""
 
                 if sender in [coord_cons_name, coord_urg_name]:
                     if sender == coord_cons_name or msg_type == "consultation_schedule":
@@ -837,17 +794,7 @@ class AgenteMedico(ResourceAgent):
                     reply.thread = data.get("doente_jid")
                     await self.send(reply)
 
-                elif sender == coord_int_name:
-                    agent.disponivel = False
-                    agent.paciente_atual = data.get("doente_jid")
-                    agent.sala_atual = data.get("sala_jid")
-                    agent.current_assignment_type = "internment"
-                    agent.add_hours("internment")
-                    log(agent.nome_medico,
-                        f"[ALLOCATION] Internment Allocation ACCEPTED for {data.get('nome', '?')}. Initiating surveillance.",
-                        "YELLOW")
-                    await self.agent.send_status(self)
-                    agent.add_behaviour(agent.ManageInternmentBehaviour(data))
+
                 else:
                     log(agent.nome_medico, f"[ALLOCATION] Generic allocation accepted from {sender}.", "BLUE")
                     await self.agent.send_status(self)

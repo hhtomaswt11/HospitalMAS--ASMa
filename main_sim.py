@@ -1,9 +1,11 @@
 import asyncio
 import random
+import re
 import subprocess
 import sys
 import os
 import time
+import traceback
 from datetime import datetime
 
 from src.config import *
@@ -30,7 +32,6 @@ class _Tee:
         self._original.write(data)
         self._original.flush()
         # Remove ANSI color codes before writing to file
-        import re
         clean = re.sub(r'\033\[[0-9;]*m', '', data)
         self._file.write(clean)
         self._file.flush()
@@ -69,7 +70,7 @@ PATIENT_NAMES = [
 ]
 
 
-async def spawn_patient(type_entry, hospital_config):
+async def spawn_patient(type_entry, hospital_config, sim_start_time=None):
     """Spawn a patient for a specific hospital.
     
     If a random roll falls below PROB_CENTRAL_TRIAGE, the patient is redirected
@@ -92,6 +93,7 @@ async def spawn_patient(type_entry, hospital_config):
             tipo_original=type_entry,
             especialidade=None,  # Central triage agent will diagnose
             hospital_config=None,  # Not bound to a hospital yet
+            sim_start_time=sim_start_time,
         )
         log("SIMULATOR",
             f"[SPAWN] {name} → Triagem Geral Central (tipo original={actual_type})", "MAGENTA")
@@ -106,6 +108,7 @@ async def spawn_patient(type_entry, hospital_config):
             tipo_entrada=type_entry,
             especialidade=specialty,
             hospital_config=hospital_config,
+            sim_start_time=sim_start_time,
         )
         hospital_id = hospital_config.get("supervisor", "").split("@")[0]
         log("SIMULATOR",
@@ -161,7 +164,7 @@ async def arrival_generator(type_entry, rate, hospital_config, agents_list):
             continue
 
         try:
-            p = await spawn_patient(type_entry, hospital_config)
+            p = await spawn_patient(type_entry, hospital_config, sim_start_time=gen_start_time)
             agents_list.append(p)
         except Exception as e:
             log("SIMULATOR", f"[ERROR] Failed to spawn {type_entry} patient: {e}", "RED")
@@ -324,7 +327,6 @@ async def main():
         log("SIMULATOR", "Simulation interrupted by user.", "YELLOW")
     except Exception as e:
         log("SIMULATOR", f"Unexpected error: {str(e)}", "RED")
-        import traceback
         traceback.print_exc()
     finally:
         try:

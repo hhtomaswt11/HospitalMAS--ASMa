@@ -1,9 +1,11 @@
 import json
 import asyncio
+import time
+import traceback
 from datetime import datetime
 
 from spade.agent import Agent
-from spade.behaviour import CyclicBehaviour
+from spade.behaviour import CyclicBehaviour, PeriodicBehaviour
 from spade.message import Message
 
 from src.config import *
@@ -61,13 +63,11 @@ class Supervisor(Agent):
         self._coord_cons = cfg["coord_cons"]
         self._coord_urg = cfg["coord_urg"]
         self._supervisor_name = str(agent_jid).split("@")[0]
-        import time
         self._sim_start_time = time.time() - (8 * SIM_HOUR_SECONDS)
 
-    class PeriodicDumperBehaviour(CyclicBehaviour):
+    class PeriodicDumperBehaviour(PeriodicBehaviour):
         async def run(self):
             if self.agent._hospital_id == 1:
-                import time
                 elapsed = time.time() - self.agent._sim_start_time
                 total_hours = elapsed / SIM_HOUR_SECONDS
                 absolute_hours = total_hours
@@ -78,7 +78,6 @@ class Supervisor(Agent):
                 sim_time = {"day": day, "hour": hour, "minute": minute}
                 
                 dump_state(sim_time)
-            await asyncio.sleep(SUPERVISOR_DUMP_INTERVAL_SECONDS)
 
     class MonitorBehaviour(CyclicBehaviour):
         async def run(self):
@@ -251,11 +250,10 @@ class Supervisor(Agent):
                         log(self.agent._supervisor_name,
                             f"[PREEMPÇÃO] Pedido recebido de urgências para {data.get('doente_jid')}.", "RED")
             except Exception as e:
-                import traceback
                 print(f"[SUPERVISOR-ERROR] Error in MonitorBehaviour: {e}")
                 traceback.print_exc()
 
     async def setup(self):
         log(self._supervisor_name, "Supervisor initialized.", "BOLD")
         self.add_behaviour(self.MonitorBehaviour())
-        self.add_behaviour(self.PeriodicDumperBehaviour())
+        self.add_behaviour(self.PeriodicDumperBehaviour(period=SUPERVISOR_DUMP_INTERVAL_SECONDS))

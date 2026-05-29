@@ -23,55 +23,55 @@ class AgenteSala(ResourceAgent):
     def get_resource_name(self):
         return self.nome_sala
 
-    class HandleProposalsBehaviour(CyclicBehaviour):
-        class ScheduledRoomOccupationBehaviour(OneShotBehaviour):
-            def __init__(self, patient_data, start_at):
-                super().__init__()
-                self.patient_data = patient_data
-                self.start_at = start_at
-            
-            async def run(self):
-                delay = max(0.0, self.start_at - time.time())
-                if delay > 0:
-                    await asyncio.sleep(delay)
+    class ScheduledRoomOccupationBehaviour(OneShotBehaviour):
+        def __init__(self, patient_data, start_at):
+            super().__init__()
+            self.patient_data = patient_data
+            self.start_at = start_at
+        
+        async def run(self):
+            delay = max(0.0, self.start_at - time.time())
+            if delay > 0:
+                await asyncio.sleep(delay)
 
-                expected_doente = self.patient_data.get("doente_jid")
-                if expected_doente not in self.agent.agenda:
-                    log(self.agent.nome_sala,
-                        f"[AGENDA-IGNORED] Reserva não encontrada na agenda ou cancelada para {self.patient_data.get('nome','?')}; salto do início de ocupação.",
-                        "YELLOW")
-                    return
-
-                # If the previous appointment is still releasing, wait instead of
-                # overlapping two patients in the same room. The routine timetable
-                # has operational buffer, so this should be rare.
-                while not self.agent.disponivel and self.agent.paciente_atual != expected_doente:
-                    await asyncio.sleep(0.2)
-
-                # Activate the reservation and emit status so dashboards reflect
-                # the real start time.
-                agenda_entry = self.agent.agenda.pop(expected_doente, None) or self.patient_data
-                agenda_entry["estado"] = "em curso"
-                agenda_entry["actual_start_at"] = time.time()
-                if "exam_start_at" in self.patient_data:
-                    self.agent.current_assignment_type = "exam"
-                elif "surgery_start_at" in self.patient_data:
-                    self.agent.current_assignment_type = "surgery"
-                else:
-                    self.agent.current_assignment_type = "consultation"
-                
-                self.agent.disponivel = False
-                self.agent.paciente_atual = expected_doente
-                previsto = self.patient_data.get("hora_inicio_marcada") or sim_time_label(self.start_at, self.agent._sim_start_time)
-                actual_start = time.time()
-                inicio_real = sim_time_label(actual_start, self.agent._sim_start_time)
-                desvio_min = max(0.0, (actual_start - self.start_at) / SIM_HOUR_SECONDS * 60.0)
+            expected_doente = self.patient_data.get("doente_jid")
+            if expected_doente not in self.agent.agenda:
                 log(self.agent.nome_sala,
-                    f"[AGENDA] Sala iniciou atendimento para {self.patient_data.get('nome', '?')} | "
-                    f"previsto={previsto} | início_real={inicio_real} | desvio={desvio_min:.1f}min_sim.",
-                    "BLUE")
-                await self.agent.send_status(self)
+                    f"[AGENDA-IGNORED] Reserva não encontrada na agenda ou cancelada para {self.patient_data.get('nome','?')}; salto do início de ocupação.",
+                    "YELLOW")
+                return
 
+            # If the previous appointment is still releasing, wait instead of
+            # overlapping two patients in the same room. The routine timetable
+            # has operational buffer, so this should be rare.
+            while not self.agent.disponivel and self.agent.paciente_atual != expected_doente:
+                await asyncio.sleep(0.2)
+
+            # Activate the reservation and emit status so dashboards reflect
+            # the real start time.
+            agenda_entry = self.agent.agenda.pop(expected_doente, None) or self.patient_data
+            agenda_entry["estado"] = "em curso"
+            agenda_entry["actual_start_at"] = time.time()
+            if "exam_start_at" in self.patient_data:
+                self.agent.current_assignment_type = "exam"
+            elif "surgery_start_at" in self.patient_data:
+                self.agent.current_assignment_type = "surgery"
+            else:
+                self.agent.current_assignment_type = "consultation"
+            
+            self.agent.disponivel = False
+            self.agent.paciente_atual = expected_doente
+            previsto = self.patient_data.get("hora_inicio_marcada") or sim_time_label(self.start_at, self.agent._sim_start_time)
+            actual_start = time.time()
+            inicio_real = sim_time_label(actual_start, self.agent._sim_start_time)
+            desvio_min = max(0.0, (actual_start - self.start_at) / SIM_HOUR_SECONDS * 60.0)
+            log(self.agent.nome_sala,
+                f"[AGENDA] Sala iniciou atendimento para {self.patient_data.get('nome', '?')} | "
+                f"previsto={previsto} | início_real={inicio_real} | desvio={desvio_min:.1f}min_sim.",
+                "BLUE")
+            await self.agent.send_status(self)
+
+    class HandleProposalsBehaviour(CyclicBehaviour):
         async def run(self):
             msg = await self.receive(timeout=RESOURCE_RECEIVE_TIMEOUT_SECONDS)
             if msg is None:
@@ -209,7 +209,7 @@ class AgenteSala(ResourceAgent):
                         agent.paciente_atual = data.get("doente_jid")
                         await self.agent.send_status(self)
                     
-                    self.agent.add_behaviour(self.ScheduledRoomOccupationBehaviour(data, start_at))
+                    self.agent.add_behaviour(self.agent.ScheduledRoomOccupationBehaviour(data, start_at))
 
                     if start_at_key == "consultation_start_at":
                         reply = msg.make_reply()

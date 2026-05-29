@@ -11,7 +11,7 @@ from src.scheduling import sim_time_label
 class AgenteDoente(Agent):
     
     def __init__(self, agent_jid, password, nome_doente, tipo_entrada="Normal",
-                 tipo_original=None, especialidade=None, hospital_config=None, **kwargs):
+                 tipo_original=None, especialidade=None, hospital_config=None, sim_start_time=None, **kwargs):
         super().__init__(agent_jid, password, **kwargs)
         self.nome_doente = nome_doente
         self.tipo_entrada = tipo_entrada
@@ -20,7 +20,7 @@ class AgenteDoente(Agent):
         self.tipo_original = tipo_original or tipo_entrada
         self.especialidade = especialidade
         self.hospital_config = hospital_config  # set for Normal/Urgencia patients
-        self._sim_start_time = time.time() - (8 * SIM_HOUR_SECONDS)
+        self._sim_start_time = sim_start_time or (time.time() - (8 * SIM_HOUR_SECONDS))
 
     class SendRequestBehaviour(OneShotBehaviour):
         async def run(self):
