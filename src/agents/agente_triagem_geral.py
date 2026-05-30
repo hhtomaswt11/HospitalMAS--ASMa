@@ -181,8 +181,18 @@ class AgenteTriagemGeral(Agent):
             route_msg.thread = doente_jid
             await self.send(route_msg)
 
-            # 7. Inform Supervisor for Dashboard visualization
-            info_msg = Message(to=jid(SUPERVISOR))  # Primary dashboard aggregator (H1 supervisor)
+            # 7. Inform the supervisor of the selected hospital for dashboard visualization.
+            # Antes, todos os routing_update eram enviados para o supervisor do H1,
+            # mesmo quando o destino era o H2. Isso fazia o H2 não registar
+            # encaminhamentos próprios e tornava o dashboard enganador.
+            selected_supervisor = best_cfg["supervisor"]
+            selected_hospital_id = None
+            for index, cfg in enumerate(self.agent.hospital_configs, start=1):
+                if cfg.get("supervisor") == selected_supervisor:
+                    selected_hospital_id = index
+                    break
+
+            info_msg = Message(to=selected_supervisor)
             info_msg.set_metadata("performative", "inform")
             info_msg.set_metadata("type", "routing_update")
             info_msg.body = json.dumps({
@@ -191,7 +201,9 @@ class AgenteTriagemGeral(Agent):
                 "dest": dest,
                 "tipo": tipo,
                 "especialidade": especialidade,
-                "load": best_metric
+                "load": best_metric,
+                "hospital_id": selected_hospital_id,
+                "supervisor_jid": selected_supervisor
             })
             await self.send(info_msg)
 

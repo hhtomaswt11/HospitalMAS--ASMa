@@ -67,7 +67,7 @@ PROCEDURE_HOURS = {
 SIMULATION_WEEKS = 1
 # Duração real da demonstração. Por defeito fica em 3 minutos para a defesa;
 # se for preciso correr uma semana simulada completa, definir SIMULATION_DURATION=1680 no ambiente.
-SIMULATION_DURATION = int(os.getenv("SIMULATION_DURATION", "45"))
+SIMULATION_DURATION = int(os.getenv("SIMULATION_DURATION", "180"))
 ARRIVAL_RATE_NORMAL_BASE = float(os.getenv("ARRIVAL_RATE_NORMAL", "1.5"))
 ARRIVAL_RATE_URGENT_BASE = float(os.getenv("ARRIVAL_RATE_URGENT", "0.75"))
 # Mantém nomes antigos para compatibilidade com o main_sim e documentação.

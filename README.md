@@ -110,10 +110,10 @@ python3 main_sim.py
 
 A simulação arranca os dois hospitais, a triagem central, os supervisores, os coordenadores, os recursos e os geradores de pacientes.
 
-Por defeito, a duração está configurada para demonstração curta:
+Por defeito, a duração está configurada para uma demonstração curta, mas suficientemente longa para observar triagem, filas, atendimentos e alguns encaminhamentos entre hospitais:
 
 ```text
-SIMULATION_DURATION=45 segundos
+SIMULATION_DURATION=180 segundos
 ```
 
 Este valor pode ser alterado por variável de ambiente, sem mexer no código.
