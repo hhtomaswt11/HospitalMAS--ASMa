@@ -1,0 +1,61 @@
+{
+  "h1": {
+    "hospital": 1,
+    "atendidos_rotina": 139,
+    "atendidos_urgencia": 116,
+    "atendidos_total": 255,
+    "media_espera_rotina_s": 61.08,
+    "media_espera_urgencia_s": 2.22,
+    "media_espera_global_s": 34.31,
+    "amostras_espera_rotina": 139,
+    "amostras_espera_urgencia": 116,
+    "abandonados_rotina": 0,
+    "abandonados_urgencia": 4,
+    "abandonados_total": 4,
+    "abandonados_por_procedimento": {
+      "internamento": 2,
+      "desconhecido": 2
+    },
+    "abandonados_por_motivo": {
+      "internamento: sem quarto/enfermeiro após 6 tentativas": 2
+    }
+  },
+  "h2": {
+    "hospital": 2,
+    "atendidos_rotina": 134,
+    "atendidos_urgencia": 66,
+    "atendidos_total": 200,
+    "media_espera_rotina_s": 58.64,
+    "media_espera_urgencia_s": 1.38,
+    "media_espera_global_s": 39.74,
+    "amostras_espera_rotina": 134,
+    "amostras_espera_urgencia": 66,
+    "abandonados_rotina": 0,
+    "abandonados_urgencia": 0,
+    "abandonados_total": 0,
+    "abandonados_por_procedimento": {},
+    "abandonados_por_motivo": {}
+  },
+  "global": {
+    "hospital": "global",
+    "atendidos_rotina": 273,
+    "atendidos_urgencia": 182,
+    "atendidos_total": 455,
+    "media_espera_rotina_s": 59.88,
+    "media_espera_urgencia_s": 1.91,
+    "media_espera_global_s": 36.7,
+    "amostras_espera_rotina": 273,
+    "amostras_espera_urgencia": 182,
+    "abandonados_rotina": 0,
+    "abandonados_urgencia": 4,
+    "abandonados_total": 4,
+    "abandonados_por_procedimento": {
+      "internamento": 2,
+      "desconhecido": 2
+    },
+    "abandonados_por_motivo": {
+      "internamento: sem quarto/enfermeiro após 6 tentativas": 2
+    }
+  },
+  "_updated_at": "2026-05-30T23:40:15"
+}

@@ -1,7 +1,6 @@
 import asyncio
 import random
 import re
-from itertools import count
 import subprocess
 import sys
 import os
@@ -18,6 +17,7 @@ from src.agents.Coordinators import (
 )
 from src.agents.supervisor import Supervisor
 from src.agents.agente_triagem_geral import AgenteTriagemGeral
+import src.metrics as metrics
 
 
 # ─────────────────────────────────────────────────────────────
@@ -64,123 +64,11 @@ def teardown_output_file(f, path):
     f.close()
     print(f"\n[OUTPUT] Log desta execução guardado em: {path}")
 
-
-def _task_coro_repr(task):
-    try:
-        return repr(task.get_coro())
-    except Exception:
-        return repr(task)
-
-
-def _is_expected_xmpp_keepalive_task(task):
-    coro_repr = _task_coro_repr(task)
-    return "XEP_0199._keepalive" in coro_repr or "_keepalive" in coro_repr
-
-
-def _install_asyncio_shutdown_filter():
-    """Silencia apenas avisos residuais conhecidos do keepalive XMPP no fecho.
-
-    O SPADE/slixmpp mantém uma tarefa interna de ping (XEP-0199). Em alguns
-    ambientes essa tarefa pode ainda existir no instante em que o event loop é
-    destruído, apesar de os agentes já terem sido parados. Não escondemos erros
-    gerais: só filtramos o aviso específico do keepalive.
-    """
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        return
-
-    default_handler = loop.get_exception_handler()
-
-    def handler(loop, context):
-        message = str(context.get("message", ""))
-        task = context.get("task") or context.get("future")
-
-        if (
-            "Task was destroyed but it is pending" in message
-            and task is not None
-            and _is_expected_xmpp_keepalive_task(task)
-        ):
-            return
-
-        if default_handler is not None:
-            default_handler(loop, context)
-        else:
-            loop.default_exception_handler(context)
-
-    loop.set_exception_handler(handler)
-
-
-async def _cancel_remaining_asyncio_tasks(timeout=2.0):
-    """Cancela tarefas assíncronas residuais antes de imprimir o fim da simulação.
-
-    `Agent.stop()` nem sempre espera por todos os keepalives/listeners internos
-    do SPADE/slixmpp. Cancelar explicitamente as tarefas pendentes no fim evita
-    logs tardios depois de `SIMULAÇÃO CONCLUÍDA` e reduz avisos de shutdown.
-    """
-    current = asyncio.current_task()
-    pending = [
-        t for t in asyncio.all_tasks()
-        if t is not current and not t.done()
-    ]
-    if not pending:
-        return 0
-
-    for task in pending:
-        task.cancel()
-
-    done, still_pending = await asyncio.wait(pending, timeout=timeout)
-    # Consumir exceções de cancelamento das tarefas concluídas.
-    for task in done:
-        try:
-            task.exception()
-        except asyncio.CancelledError:
-            pass
-        except Exception:
-            pass
-
-    # Keepalives XMPP residuais são um detalhe conhecido do slixmpp no fecho
-    # do event loop. Mantemos alerta apenas para tarefas inesperadas.
-    unexpected_pending = [
-        task for task in still_pending
-        if not _is_expected_xmpp_keepalive_task(task)
-    ]
-    return len(unexpected_pending)
-
 PATIENT_NAMES = [
     "Alice", "Bernardo", "Carla", "Duarte", "Elena", "Filipe", "Guilherme", "Helena",
     "Inês", "João", "Katia", "Luís", "Marta", "Nuno", "Olívia", "Pedro", "Quitéria",
     "Ricardo", "Sofia", "Tiago", "Ulisses", "Vera", "Walter", "Xavier", "Yara", "Zulmira"
 ]
-
-PATIENT_COUNTER = count(1)
-
-
-def _hospital_tag_from_config(hospital_config):
-    """Return a stable, ASCII-safe hospital tag for generated patient JIDs."""
-    supervisor_local = str((hospital_config or {}).get("supervisor", "")).split("@")[0]
-    return "h2" if supervisor_local.startswith("h2_") else "h1"
-
-
-def _patient_identity(type_entry, hospital_config, via_central=False):
-    """Create unique display name and XMPP-safe JID local part for a patient.
-
-    Older versions used only ``Nome_###`` as the JID local part. With four
-    concurrent generators, that could collide during longer simulations. A
-    collision means two clinical flows may share the same XMPP account, causing
-    late messages and noisy ``No behaviour matched`` warnings. The monotonic
-    counter keeps the human-readable name while guaranteeing unique JIDs.
-
-    When a patient is sent to the central triage, the JID uses the neutral
-    ``central`` namespace. This avoids confusing logs such as a
-    ``patient_h2_*`` being treated in H1 after legitimate central rerouting.
-    """
-    seq = next(PATIENT_COUNTER)
-    display_name = f"{random.choice(PATIENT_NAMES)}_{seq:05d}"
-    type_tag = "urg" if type_entry == "Urgencia" else "normal"
-    origin_tag = "central" if via_central else _hospital_tag_from_config(hospital_config)
-    jid_local = f"patient_{origin_tag}_{type_tag}_{seq:05d}"
-    return display_name, jid(jid_local)
 
 
 async def spawn_patient(type_entry, hospital_config, sim_start_time=None):
@@ -189,10 +77,11 @@ async def spawn_patient(type_entry, hospital_config, sim_start_time=None):
     If a random roll falls below PROB_CENTRAL_TRIAGE, the patient is redirected
     to the central triage agent regardless of their original type_entry.
     """
-    # Decide whether to route through central triage before creating the JID.
-    # This lets central-routed patients use a neutral namespace in logs.
+    name = random.choice(PATIENT_NAMES) + f"_{random.randint(100, 999)}"
+    jid_str = jid(name.lower().replace(" ", "_"))
+
+    # Decide whether to route through central triage
     use_central_triage = random.random() < PROB_CENTRAL_TRIAGE
-    name, jid_str = _patient_identity(type_entry, hospital_config, via_central=use_central_triage)
 
     if use_central_triage:
         # Central triage patients keep their original type (Normal or Urgencia)
@@ -265,7 +154,7 @@ async def arrival_generator(type_entry, rate, hospital_config, agents_list):
         # Backpressure real: contar apenas agentes-doente vivos, não a infraestrutura hospitalar.
         active_patients = [
             p for p in agents_list
-            if isinstance(p, AgenteDoente) and p.is_alive() and not getattr(p, "finished", False)
+            if isinstance(p, AgenteDoente) and p.is_alive()
         ]
         if len(active_patients) > 150:
             log("SIMULATOR",
@@ -349,7 +238,7 @@ def cleanup_state():
     if not os.path.exists(data_dir):
         os.makedirs(data_dir)
         
-    files_to_remove = ["dashboard.json", "dashboard_h1.json", "dashboard_h2.json", "log_supervisor.txt"]
+    files_to_remove = ["dashboard.json", "log_supervisor.txt"]
     for f in files_to_remove:
         p = os.path.join(data_dir, f)
         if os.path.exists(p):
@@ -361,7 +250,6 @@ def cleanup_state():
 
 
 async def main():
-    _install_asyncio_shutdown_filter()
     log_file, log_path = setup_output_file()
     dashboard_proc = None
     agents = []
@@ -449,14 +337,6 @@ async def main():
             if tasks:
                 await asyncio.gather(*tasks, return_exceptions=True)
 
-            if SIM_SHUTDOWN_DRAIN_SECONDS > 0:
-                log(
-                    "SIMULATOR",
-                    f"A drenar mensagens XMPP pendentes antes do encerramento ({SIM_SHUTDOWN_DRAIN_SECONDS:.1f}s)...",
-                    "YELLOW",
-                )
-                await asyncio.sleep(SIM_SHUTDOWN_DRAIN_SECONDS)
-
             log("SIMULATOR", f"Closing hospitals. Discharging {len(agents)} active agents...", "BOLD")
             
             # Stop patients first (they are often the ones sending msgs)
@@ -467,19 +347,6 @@ async def main():
                 except Exception as e:
                     agent_id = getattr(a, "jid", repr(a))
                     log("SIMULATOR", f"[SHUTDOWN-WARN] Falha ao parar {agent_id}: {e}", "YELLOW")
-
-            # Give the underlying slixmpp keepalive/listener tasks a final
-            # event-loop cycle and then cancel any residual tasks before
-            # printing the final banner. This prevents logs/warnings from
-            # appearing after "SIMULAÇÃO CONCLUÍDA".
-            await asyncio.sleep(0.5)
-            still_pending = await _cancel_remaining_asyncio_tasks(timeout=2.0)
-            if still_pending:
-                log(
-                    "SIMULATOR",
-                    f"[SHUTDOWN-WARN] {still_pending} tarefa(s) assíncrona(s) não terminaram antes do timeout de fecho.",
-                    "YELLOW",
-                )
 
             if dashboard_proc:
                 dashboard_proc.terminate()
@@ -492,6 +359,29 @@ async def main():
                     
             print("=" * 70)
             print("  SIMULAÇÃO CONCLUÍDA")
+            print("=" * 70 + "\n")
+
+            # ── Sumário de métricas ──────────────────────────────────────
+            metrics.dump_metrics("data/metrics.json")
+            all_m = metrics.get_all_summaries()
+            print("\n" + "=" * 70)
+            print("  MÉTRICAS FINAIS DE SIMULAÇÃO")
+            print("=" * 70)
+            for h_label, m in all_m.items():
+                label = str(m.get("hospital", h_label)).upper()
+                print(f"\n  [{label}]")
+                print(f"    Atendidos rotina   : {m['atendidos_rotina']}")
+                print(f"    Atendidos urgência : {m['atendidos_urgencia']}")
+                print(f"    Atendidos total    : {m['atendidos_total']}")
+                wr = m['media_espera_rotina_s']
+                wu = m['media_espera_urgencia_s']
+                print(f"    Espera média rotina  : {f'{wr:.1f}s' if wr is not None else 'N/A'} "
+                      f"({m['amostras_espera_rotina']} amostras)")
+                print(f"    Espera média urgência: {f'{wu:.1f}s' if wu is not None else 'N/A'} "
+                      f"({m['amostras_espera_urgencia']} amostras)")
+                print(f"    Abandonados rotina   : {m['abandonados_rotina']}")
+                print(f"    Abandonados urgência : {m['abandonados_urgencia']}")
+                print(f"    Abandonados total    : {m['abandonados_total']}")
             print("=" * 70 + "\n")
         finally:
             teardown_output_file(log_file, log_path)

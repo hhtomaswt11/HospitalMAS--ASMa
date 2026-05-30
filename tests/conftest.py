@@ -1,26 +1,32 @@
 """Pequenos doubles de teste para evitar depender de um servidor XMPP/SPADE.
 
-Os testes unitários abaixo exercitam lógica pura do projeto. Para isso não é
+Os testes unitários deste projecto exercitam lógica pura. Para isso não é
 necessário arrancar agentes reais nem ligar ao servidor XMPP.
+
+Este ficheiro é carregado automaticamente pelo unittest (via sys.path) e pelo
+pytest (como conftest.py) antes de qualquer ficheiro de testes da pasta.
 """
 import sys
+import os
 import types
 
+# ── Garante que a raiz do projecto está no sys.path ──────────────────────────
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-# Fake mínimo de slixmpp usado por src.patch.apply_xmpp_patch().
+# ── Fake mínimo de slixmpp (usado por src.patch.apply_xmpp_patch) ────────────
 slixmpp = types.ModuleType("slixmpp")
 
 
-class ClientXMPP:
+class _SlixClientXMPP:
     def connect(self, *args, **kwargs):
         return None
 
 
-slixmpp.ClientXMPP = ClientXMPP
+slixmpp.ClientXMPP = _SlixClientXMPP
 sys.modules.setdefault("slixmpp", slixmpp)
 
 
-# Fake mínimo de SPADE usado em imports de agentes/coordenadores.
+# ── Fake completo de SPADE ────────────────────────────────────────────────────
 spade = types.ModuleType("spade")
 spade_agent = types.ModuleType("spade.agent")
 spade_message = types.ModuleType("spade.message")
@@ -28,6 +34,8 @@ spade_behaviour = types.ModuleType("spade.behaviour")
 
 
 class Agent:
+    """Substituto mínimo de spade.agent.Agent para testes sem servidor XMPP."""
+
     def __init__(self, jid, password, *args, **kwargs):
         self.jid = jid
         self.password = password
@@ -42,6 +50,8 @@ class Agent:
 
 
 class Message:
+    """Substituto de spade.message.Message que regista metadados e body."""
+
     def __init__(self, to=None):
         self.to = to
         self.body = ""
@@ -54,8 +64,15 @@ class Message:
     def get_metadata(self, key):
         return self._metadata.get(key)
 
+    def make_reply(self):
+        reply = Message(to=str(self.to))
+        reply.thread = self.thread
+        return reply
 
-class _Behaviour:
+
+class _BaseBehaviour:
+    """Base partilhada pelos behaviours de teste — guarda mensagens enviadas."""
+
     def __init__(self, *args, **kwargs):
         self.agent = None
         self.sent_messages = []
@@ -67,15 +84,15 @@ class _Behaviour:
         return None
 
 
-class CyclicBehaviour(_Behaviour):
+class CyclicBehaviour(_BaseBehaviour):
     pass
 
 
-class OneShotBehaviour(_Behaviour):
+class OneShotBehaviour(_BaseBehaviour):
     pass
 
 
-class PeriodicBehaviour(_Behaviour):
+class PeriodicBehaviour(_BaseBehaviour):
     def __init__(self, *args, **kwargs):
         super().__init__()
         self.period = kwargs.get("period")

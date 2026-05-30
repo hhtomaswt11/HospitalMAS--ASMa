@@ -169,24 +169,6 @@ LOAD_QUERY_RESPONSE_WAIT_SECONDS = 3  # timeout to collect load_query responses
 SIM_INFRA_READY_WAIT_SECONDS = 2
 SIM_PROGRESS_TICK_SECONDS = 5
 
-# Encerramento controlado: depois de parar os geradores de doentes, a simulação
-# aguarda alguns segundos para que mensagens XMPP já enviadas sejam processadas.
-# Isto reduz avisos do SPADE/slixmpp no final da execução sem esconder erros reais.
-SIM_SHUTDOWN_DRAIN_SECONDS = float(os.getenv("SIM_SHUTDOWN_DRAIN_SECONDS", "3"))
-
-# Após receber alta, o agente-doente fica vivo por uma janela curta para absorver
-# mensagens tardias inevitáveis em fluxos assíncronos (ex.: confirmação de
-# internamento/cirurgia que chega quase ao mesmo tempo que a alta).
-PATIENT_SHUTDOWN_GRACE_SECONDS = float(os.getenv("PATIENT_SHUTDOWN_GRACE_SECONDS", "2"))
-
-# Mensagens reject-proposal do Contract Net são informativas neste modelo: os
-# recursos só reservam/ocupam quando recebem accept-proposal. Em execuções com
-# muitos agentes SPADE, rejects tardios podem chegar quando o recurso já está
-# ocupado/encerrando e gerar ruído "No behaviour matched" sem impacto funcional.
-# Por defeito não enviamos esses rejects no runtime final; pode ser reativado
-# para depuração/protocolo estrito com CONTRACT_NET_SEND_REJECT_PROPOSALS=1.
-CONTRACT_NET_SEND_REJECT_PROPOSALS = os.getenv("CONTRACT_NET_SEND_REJECT_PROPOSALS", "0").lower() in {"1", "true", "yes", "sim"}
-
 # Por defeito o dashboard é lançado manualmente, como descrito no README.
 # Definir AUTO_START_DASHBOARD=1 permite voltar ao comportamento antigo.
 AUTO_START_DASHBOARD = os.getenv("AUTO_START_DASHBOARD", "0").lower() in {"1", "true", "yes", "sim"}

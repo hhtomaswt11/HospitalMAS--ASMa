@@ -239,7 +239,6 @@ class AgenteMedico(ResourceAgent):
                     "especialidade": exam_specialty,
                     "prioridade": self.patient_data.get("prioridade", ROUTINE_SURGERY_PRIORITY),
                     "solicitante": str(self.agent.jid),
-                    "spawned_at": self.patient_data.get("spawned_at"),
                 })
                 msg_exame.thread = doente_jid
                 await self.send(msg_exame)
@@ -314,7 +313,6 @@ class AgenteMedico(ResourceAgent):
                         "prioridade": self.patient_data.get("prioridade", ROUTINE_SURGERY_PRIORITY),
                         "solicitante": str(self.agent.jid),
                         "exam_result": exam_result,
-                        "spawned_at": self.patient_data.get("spawned_at"),
                     })
                     msg_cirurgia.thread = doente_jid
                     await self.send(msg_cirurgia)
@@ -380,7 +378,6 @@ class AgenteMedico(ResourceAgent):
                         "nome": nome,
                         "solicitante": str(self.agent.jid),
                         "prioridade": self.patient_data.get("prioridade", 999),
-                        "spawned_at": self.patient_data.get("spawned_at"),
                     })
                     await self.send(msg_int)
                     log(self.agent.nome_medico, f"[CLINICA] {nome} encaminhado para internamento.", "YELLOW")
@@ -460,7 +457,6 @@ class AgenteMedico(ResourceAgent):
                 "nome": nome,
                 "solicitante": str(self.agent.jid),
                 "prioridade": self.patient_data.get("prioridade", 999),
-                "spawned_at": self.patient_data.get("spawned_at"),
             })
             msg_int.thread = doente_jid
             await self.send(msg_int)
@@ -568,7 +564,6 @@ class AgenteMedico(ResourceAgent):
                 "nome": nome,
                 "actual_start_at": actual_start,
                 "estado": "em curso",
-                "spawned_at": self.patient_data.get("spawned_at"),
             })
             started.thread = expected_doente
             await self.send(started)

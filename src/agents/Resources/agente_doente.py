@@ -1,6 +1,5 @@
 import json
 import time
-import asyncio
 
 from spade.agent import Agent
 from spade.behaviour import CyclicBehaviour, OneShotBehaviour
@@ -8,6 +7,7 @@ from spade.message import Message
 
 from src.config import *
 from src.scheduling import sim_time_label
+import src.metrics as metrics
 
 class AgenteDoente(Agent):
     
@@ -22,24 +22,6 @@ class AgenteDoente(Agent):
         self.especialidade = especialidade
         self.hospital_config = hospital_config  # set for Normal/Urgencia patients
         self._sim_start_time = sim_start_time or (time.time() - (8 * SIM_HOUR_SECONDS))
-        self.spawned_at = time.time()
-        self.finished = False
-
-    class DelayedStopBehaviour(OneShotBehaviour):
-        """Stops the patient only after a short drain window.
-
-        In SPADE/XMPP, late messages can arrive a few milliseconds after a
-        discharge/allocation event.  Stopping immediately causes noisy
-        "No behaviour matched" warnings even though the clinical flow is already
-        complete.  This small grace period lets the patient absorb and ignore
-        those messages cleanly.
-        """
-
-        async def run(self):
-            await asyncio.sleep(PATIENT_SHUTDOWN_GRACE_SECONDS)
-            # Mantido por compatibilidade, mas já não é usado no fluxo normal.
-            # Os doentes ficam vivos até ao shutdown global para absorverem
-            # mensagens tardias sem gerar avisos SPADE/XMPP.
 
     class SendRequestBehaviour(OneShotBehaviour):
         async def run(self):
@@ -51,7 +33,6 @@ class AgenteDoente(Agent):
                 "tipo_original": agent.tipo_original,
                 "via_central": agent.tipo_entrada == "Central",
                 "especialidade": agent.especialidade,
-                "spawned_at": agent.spawned_at,
             })
 
             if agent.tipo_entrada == "Central":
@@ -94,14 +75,6 @@ class AgenteDoente(Agent):
 
             resumo = payload.get("estado") or payload.get("status") or payload.get("nome") or str(payload)
             log(self.agent.nome_doente, f"[STATUS] Atualização recebida ({msg_type}): {resumo}", "CYAN")
-
-            if self.agent.finished and msg_type != "discharge":
-                log(
-                    self.agent.nome_doente,
-                    f"[IGNORADO] Mensagem tardia após alta ignorada ({msg_type}).",
-                    "YELLOW",
-                )
-                return
 
             if msg_type == "consultation_scheduled":
                 start_at = payload.get("consultation_start_at")
@@ -170,19 +143,14 @@ class AgenteDoente(Agent):
                 return
 
             if msg_type == "discharge":
-                if self.agent.finished:
-                    log(self.agent.nome_doente, "[ALTA] Alta duplicada ignorada.", "YELLOW")
-                    return
-                self.agent.finished = True
-                log(
-                    self.agent.nome_doente,
-                    "[ALTA] Recebi alta médica! Doente marcado como concluído; "
-                    "permanece ativo até ao encerramento global para absorver mensagens tardias.",
-                    "GREEN",
-                )
+                log(self.agent.nome_doente, "[ALTA] Recebi alta médica! A encerrar agente...", "GREEN")
+                # Em SPADE, chamar stop() liberta os recursos/sockets XMPP associados a este agente.
+                await self.agent.stop()
                 return
 
     async def setup(self):
         log(self.nome_doente, f"AgenteDoente initialized (type={self.tipo_entrada})", "GREEN")
+        # Regista o momento de criação para o cálculo do tempo de espera.
+        metrics.register_spawn(str(self.jid))
         self.add_behaviour(self.SendRequestBehaviour())
         self.add_behaviour(self.ReceiveStatusBehaviour())

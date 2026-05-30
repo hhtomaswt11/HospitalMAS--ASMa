@@ -243,8 +243,7 @@ class CoordenadorUrgencias(CoordenadorBase):
                     "tipo_original": patient_data.get("tipo_original", patient_data.get("tipo", "Urgencia")),
                     "prioridade": patient_data.get("prioridade", URGENT_PRIORITY_MAX),
                     "especialidade": patient_data.get("especialidade"),
-                    "sala_jid": sala_proposta["sala_jid"],
-                    "spawned_at": patient_data.get("spawned_at")
+                    "sala_jid": sala_proposta["sala_jid"]
                 })
                 acc_m.thread = doente_jid
                 await self.send(acc_m)
@@ -257,44 +256,44 @@ class CoordenadorUrgencias(CoordenadorBase):
                     "tipo": patient_data.get("tipo", "Urgencia"),
                     "tipo_original": patient_data.get("tipo_original", patient_data.get("tipo", "Urgencia")),
                     "prioridade": patient_data.get("prioridade", URGENT_PRIORITY_MAX),
-                    "especialidade": patient_data.get("especialidade"),
-                    "spawned_at": patient_data.get("spawned_at")
+                    "especialidade": patient_data.get("especialidade")
                 })
                 acc_s.thread = doente_jid
                 await self.send(acc_s)
 
-                if CONTRACT_NET_SEND_REJECT_PROPOSALS:
-                    for proposta in medico_propostas:
-                        m_jid = proposta.get("medico_jid")
-                        if not m_jid or m_jid == medico_proposta["medico_jid"]:
-                            continue
-                        rej = Message(to=m_jid)
-                        rej.set_metadata("performative", "reject-proposal")
-                        rej.body = json.dumps({"motivo": "Proposta não selecionada", "doente_jid": doente_jid})
-                        rej.thread = doente_jid
-                        await self.send(rej)
+                for proposta in medico_propostas:
+                    m_jid = proposta.get("medico_jid")
+                    if not m_jid or m_jid == medico_proposta["medico_jid"]:
+                        continue
+                    rej = Message(to=m_jid)
+                    rej.set_metadata("performative", "reject-proposal")
+                    rej.body = json.dumps({"motivo": "Proposta não selecionada", "doente_jid": doente_jid})
+                    rej.thread = doente_jid
+                    await self.send(rej)
 
-                    for proposta in sala_propostas:
-                        s_jid = proposta.get("sala_jid")
-                        if not s_jid or s_jid == sala_proposta["sala_jid"]:
-                            continue
-                        rej = Message(to=s_jid)
-                        rej.set_metadata("performative", "reject-proposal")
-                        rej.body = json.dumps({"motivo": "Proposta não selecionada", "doente_jid": doente_jid})
-                        rej.thread = doente_jid
-                        await self.send(rej)
+                for proposta in sala_propostas:
+                    s_jid = proposta.get("sala_jid")
+                    if not s_jid or s_jid == sala_proposta["sala_jid"]:
+                        continue
+                    rej = Message(to=s_jid)
+                    rej.set_metadata("performative", "reject-proposal")
+                    rej.body = json.dumps({"motivo": "Proposta não selecionada", "doente_jid": doente_jid})
+                    rej.thread = doente_jid
+                    await self.send(rej)
 
-                await agent.emit_metric_event(
-                    self,
-                    "patient_started",
-                    patient_data,
-                    patient_type="emergency",
-                    actual_start_at=time.time(),
-                )
                 log(agent._coord_name,
                     f"[ALOCAÇÃO] EMERGÊNCIA ALOCADA: {nome} → "
                     f"Médico={medico_proposta['nome_medico']}, "
                     f"Sala={sala_proposta['nome_sala']}", "BOLD")
+
+                # Regista atendimento de urgência nas métricas
+                await agent.notify_metric_attended(
+                    self,
+                    doente_jid=doente_jid,
+                    nome=nome,
+                    tipo=patient_data.get("tipo_original", patient_data.get("tipo", "Urgencia")),
+                    attended_at=time.time(),
+                )
                 return True
             else:
                 log(agent._coord_name,

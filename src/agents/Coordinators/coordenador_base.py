@@ -6,6 +6,7 @@ Centraliza atributos e lógica comum:
   - Fila genérica com deduplicação por doente_jid
   - Backoff exponencial para retentativas
   - Métodos utilitários para Contract Net (reject)
+  - Notificação de métricas ao supervisor
 """
 import json
 import time
@@ -14,7 +15,8 @@ import asyncio
 from spade.agent import Agent
 from spade.message import Message
 
-from src.config import H1_CONFIG, ROUTINE_SURGERY_PRIORITY, CONTRACT_NET_SEND_REJECT_PROPOSALS, log
+from src.config import H1_CONFIG, ROUTINE_SURGERY_PRIORITY, log
+import src.metrics as metrics
 
 
 class CoordenadorBase(Agent):
@@ -81,43 +83,70 @@ class CoordenadorBase(Agent):
         data["_next_retry_at"] = time.monotonic() + delay
         return delay, retries, False
 
+    # ── Métricas de Simulação ──
 
-    async def emit_metric_event(self, behaviour, event, patient_data, **extra):
-        """Send a lightweight simulation-metrics event to this hospital's Supervisor.
+    def _hospital_id_from_config(self) -> int:
+        """Determina o hospital_id a partir do supervisor JID."""
+        sup = str(self.hospital_config.get("supervisor", ""))
+        return 2 if "h2_" in sup else 1
 
-        The Supervisor/state_store computes the aggregate counters and averages.
-        This keeps metrics collection out of the clinical allocation logic.
-        """
-        payload = {
-            "event": event,
-            "doente_jid": patient_data.get("doente_jid"),
-            "nome": patient_data.get("nome"),
-            "tipo": patient_data.get("tipo"),
-            "tipo_original": patient_data.get("tipo_original"),
-            "spawned_at": patient_data.get("spawned_at") or patient_data.get("created_at"),
-        }
-        payload.update(extra)
-        msg = Message(to=self._supervisor)
-        msg.set_metadata("performative", "inform")
-        msg.set_metadata("type", "metrics_event")
-        msg.body = json.dumps(payload)
-        msg.thread = payload.get("doente_jid")
-        await behaviour.send(msg)
+    async def notify_metric_attended(
+        self, behaviour, doente_jid: str, nome: str, tipo: str,
+        attended_at: float = None
+    ) -> None:
+        """Regista atendimento no módulo de métricas e notifica o supervisor."""
+        attended_at = attended_at or time.time()
+        hospital_id = self._hospital_id_from_config()
+
+        # Registo direto (mesmo processo)
+        metrics.register_attended(doente_jid, tipo, hospital_id, attended_at)
+
+        # Notificação XMPP ao supervisor para audit log
+        if self._supervisor:
+            msg = Message(to=self._supervisor)
+            msg.set_metadata("performative", "inform")
+            msg.set_metadata("type", "patient_attended")
+            msg.body = json.dumps({
+                "doente_jid": doente_jid,
+                "nome": nome,
+                "tipo": tipo,
+                "attended_at": attended_at,
+            })
+            msg.thread = doente_jid
+            await behaviour.send(msg)
+
+    async def notify_metric_abandoned(
+        self, behaviour, doente_jid: str, nome: str, tipo: str,
+        motivo: str = "", procedimento: str = "desconhecido"
+    ) -> None:
+        """Regista abandono no módulo de métricas e notifica o supervisor."""
+        hospital_id = self._hospital_id_from_config()
+
+        # Registo direto (mesmo processo) — com detalhe por procedimento e motivo
+        metrics.register_abandoned(
+            doente_jid, tipo, hospital_id,
+            procedimento=procedimento, motivo=motivo,
+        )
+
+        # Notificação XMPP ao supervisor para audit log
+        if self._supervisor:
+            msg = Message(to=self._supervisor)
+            msg.set_metadata("performative", "inform")
+            msg.set_metadata("type", "patient_abandoned")
+            msg.body = json.dumps({
+                "doente_jid": doente_jid,
+                "nome": nome,
+                "tipo": tipo,
+                "motivo": motivo,
+                "procedimento": procedimento,
+            })
+            msg.thread = doente_jid
+            await behaviour.send(msg)
 
     # ── Utilitários Contract Net ──
 
     async def reject_unselected(self, behaviour, propostas, selected_jid, jid_key, thread, motivo):
-        """Rejeita propostas não selecionadas quando o modo estrito está ativo.
-
-        No modelo implementado, os recursos não ficam reservados após ``propose``;
-        só alteram estado ao receber ``accept-proposal``. Assim, as mensagens
-        ``reject-proposal`` são apenas informativas. Por defeito são omitidas
-        para evitar ruído assíncrono do SPADE/XMPP no fim de ciclos de negociação
-        ou durante o encerramento da simulação.
-        """
-        if not CONTRACT_NET_SEND_REJECT_PROPOSALS:
-            return
-
+        """Rejeita todas as propostas não selecionadas."""
         for proposta in propostas:
             target = proposta.get(jid_key)
             if not target or target == selected_jid:

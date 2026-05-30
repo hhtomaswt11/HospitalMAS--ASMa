@@ -59,15 +59,6 @@ class CoordenadorCirurgias(CoordenadorBase):
                 discharge.body = json.dumps({"estado": "Alta/observacao por cirurgia indisponivel"})
                 discharge.thread = doente_jid
                 await self.send(discharge)
-            await self.agent.emit_metric_event(
-                self,
-                "patient_failed_after_retries",
-                patient_data,
-                procedure="surgery",
-                reason=reason,
-                retry_count=patient_data.get("_retry_count"),
-            )
-
             log(self.agent._coord_name,
                 f"[CIRURGIA-FALHADA] {nome}: {reason}. Solicitante notificado.",
                 "RED")
@@ -92,6 +83,14 @@ class CoordenadorCirurgias(CoordenadorBase):
                 await self.notify_surgery_failure(
                     removed,
                     f"sem bloco/cirurgião disponível após {SURGERY_MAX_RETRIES} tentativas",
+                )
+                await self.agent.notify_metric_abandoned(
+                    self,
+                    doente_jid=removed.get("doente_jid", ""),
+                    nome=removed.get("nome", "?"),
+                    tipo=removed.get("tipo_original", removed.get("tipo", "urgencia")),
+                    motivo=f"cirurgia: sem bloco/cirurgião após {SURGERY_MAX_RETRIES} tentativas",
+                    procedimento="cirurgia",
                 )
                 return True
 
@@ -244,8 +243,7 @@ class CoordenadorCirurgias(CoordenadorBase):
                     "nome": nome,
                     "surgery_start_at": surgery_start_at,
                     "surgery_duration_hours": duration_hr,
-                    "surgery_duration_seconds": duration_sec,
-                    "spawned_at": patient_data.get("spawned_at")
+                    "surgery_duration_seconds": duration_sec
                 })
                 acc_b.thread = doente_jid
                 await self.send(acc_b)
@@ -260,8 +258,7 @@ class CoordenadorCirurgias(CoordenadorBase):
                     "tipo_original": patient_data.get("tipo_original", patient_data.get("tipo")),
                     "surgery_start_at": surgery_start_at,
                     "surgery_duration_hours": duration_hr,
-                    "surgery_duration_seconds": duration_sec,
-                    "spawned_at": patient_data.get("spawned_at")
+                    "surgery_duration_seconds": duration_sec
                 })
                 acc_m.thread = doente_jid
 
