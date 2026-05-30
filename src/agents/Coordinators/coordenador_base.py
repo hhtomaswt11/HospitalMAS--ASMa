@@ -14,7 +14,7 @@ import asyncio
 from spade.agent import Agent
 from spade.message import Message
 
-from src.config import H1_CONFIG, ROUTINE_SURGERY_PRIORITY, log
+from src.config import H1_CONFIG, ROUTINE_SURGERY_PRIORITY, CONTRACT_NET_SEND_REJECT_PROPOSALS, log
 
 
 class CoordenadorBase(Agent):
@@ -81,10 +81,43 @@ class CoordenadorBase(Agent):
         data["_next_retry_at"] = time.monotonic() + delay
         return delay, retries, False
 
+
+    async def emit_metric_event(self, behaviour, event, patient_data, **extra):
+        """Send a lightweight simulation-metrics event to this hospital's Supervisor.
+
+        The Supervisor/state_store computes the aggregate counters and averages.
+        This keeps metrics collection out of the clinical allocation logic.
+        """
+        payload = {
+            "event": event,
+            "doente_jid": patient_data.get("doente_jid"),
+            "nome": patient_data.get("nome"),
+            "tipo": patient_data.get("tipo"),
+            "tipo_original": patient_data.get("tipo_original"),
+            "spawned_at": patient_data.get("spawned_at") or patient_data.get("created_at"),
+        }
+        payload.update(extra)
+        msg = Message(to=self._supervisor)
+        msg.set_metadata("performative", "inform")
+        msg.set_metadata("type", "metrics_event")
+        msg.body = json.dumps(payload)
+        msg.thread = payload.get("doente_jid")
+        await behaviour.send(msg)
+
     # ── Utilitários Contract Net ──
 
     async def reject_unselected(self, behaviour, propostas, selected_jid, jid_key, thread, motivo):
-        """Rejeita todas as propostas não selecionadas."""
+        """Rejeita propostas não selecionadas quando o modo estrito está ativo.
+
+        No modelo implementado, os recursos não ficam reservados após ``propose``;
+        só alteram estado ao receber ``accept-proposal``. Assim, as mensagens
+        ``reject-proposal`` são apenas informativas. Por defeito são omitidas
+        para evitar ruído assíncrono do SPADE/XMPP no fim de ciclos de negociação
+        ou durante o encerramento da simulação.
+        """
+        if not CONTRACT_NET_SEND_REJECT_PROPOSALS:
+            return
+
         for proposta in propostas:
             target = proposta.get(jid_key)
             if not target or target == selected_jid:

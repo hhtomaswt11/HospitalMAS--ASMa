@@ -34,7 +34,8 @@ async def get_state():
     return {
         "resources": {},
         "waitlist": {"routine": [], "emergency": []},
-        "logs": []
+        "logs": [],
+        "metrics": {"by_hospital": {"h1": {}, "h2": {}}, "events": []}
     }
 
 if __name__ == "__main__":

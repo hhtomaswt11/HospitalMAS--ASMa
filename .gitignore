@@ -1,11 +1,16 @@
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 .Python
 env/
 venv/
+.venv/
 .env
 .DS_Store
+.pytest_cache/
 data/log_supervisor.txt
 data/dashboard.json
+data/dashboard_h1.json
+data/dashboard_h2.json
 outputs/

@@ -113,6 +113,15 @@ class CoordenadorInternamento(CoordenadorBase):
                 discharge.thread = doente_jid
                 await self.send(discharge)
 
+            await self.agent.emit_metric_event(
+                self,
+                "patient_failed_after_retries",
+                patient_data,
+                procedure="internment",
+                reason=reason,
+                retry_count=patient_data.get("_retry_count"),
+            )
+
             log(self.agent._coord_name,
                 f"[INTERNAMENTO-FALHADO] {nome}: {reason}. Doente/solicitante notificados.",
                 "RED")
@@ -253,7 +262,12 @@ class CoordenadorInternamento(CoordenadorBase):
 
             acc_room = Message(to=room_proposal["sala_jid"])
             acc_room.set_metadata("performative", "accept-proposal")
-            acc_room.body = json.dumps({"doente_jid": doente_jid, "nome": nome, "tipo": "Internamento"})
+            acc_room.body = json.dumps({
+                "doente_jid": doente_jid,
+                "nome": nome,
+                "tipo": "Internamento",
+                "spawned_at": patient_data.get("spawned_at"),
+            })
             acc_room.thread = doente_jid
             await self.send(acc_room)
             await agent.reject_unselected(self, room_propostas, room_proposal["sala_jid"], "sala_jid", doente_jid, "Proposta não selecionada")
@@ -268,6 +282,7 @@ class CoordenadorInternamento(CoordenadorBase):
                     "nome": nome,
                     "sala_jid": room_proposal["sala_jid"],
                     "duration": duration,
+                    "spawned_at": patient_data.get("spawned_at"),
                 })
                 acc_nurse.thread = doente_jid + "_nurse"
                 await self.send(acc_nurse)

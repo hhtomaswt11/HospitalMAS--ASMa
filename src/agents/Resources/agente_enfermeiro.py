@@ -38,8 +38,9 @@ class AgenteEnfermeiro(ResourceAgent):
     def get_resource_name(self):
         return self.nome_enfermeiro
 
-    def add_hours(self, procedure_type: str):
-        hours = PROCEDURE_HOURS.get(procedure_type, 2)
+    def add_hours(self, procedure_type: str, hours=None):
+        if hours is None:
+            hours = PROCEDURE_HOURS.get(procedure_type, 2)
         self.weekly_hours_used += hours
         log(self.nome_enfermeiro,
             f"[HORAS] {self.nome_enfermeiro} acumulou {self.weekly_hours_used:.0f}/{self.max_weekly_hours}h semanais "

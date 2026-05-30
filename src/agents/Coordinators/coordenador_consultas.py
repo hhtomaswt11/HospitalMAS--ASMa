@@ -437,6 +437,13 @@ class CoordenadorConsultas(CoordenadorBase):
                 allocation = self.agent.alocacoes.get(doente_jid)
                 if isinstance(allocation, dict):
                     allocation["actual_start_at"] = data.get("actual_start_at", time.time())
+                    await self.agent.emit_metric_event(
+                        self,
+                        "patient_started",
+                        allocation,
+                        patient_type="routine",
+                        actual_start_at=allocation["actual_start_at"],
+                    )
                 log(self.agent._coord_name,
                     f"[AGENDA] Consulta de rotina em curso registada no coordenador: {nome}.",
                     "GREEN")
@@ -597,6 +604,7 @@ class CoordenadorConsultas(CoordenadorBase):
                 "hora_fim_prevista": slot["end_label"],
                 "estado": "reservada",
                 "created_at": time.time(),
+                "spawned_at": patient_data.get("spawned_at"),
             }
 
             # Reserva local tentativa antes de avisar recursos, para impedir
@@ -616,6 +624,7 @@ class CoordenadorConsultas(CoordenadorBase):
                 "hora_inicio_marcada": allocation["hora_inicio_marcada"],
                 "hora_fim_prevista": allocation["hora_fim_prevista"],
                 "estado": "reservada",
+                "spawned_at": allocation.get("spawned_at"),
             }
 
             acc_m = Message(to=medico_jid)

@@ -64,6 +64,15 @@ class CoordenadorExames(CoordenadorBase):
                 discharge.thread = doente_jid
                 await self.send(discharge)
 
+            await self.agent.emit_metric_event(
+                self,
+                "patient_failed_after_retries",
+                patient_data,
+                procedure="exam",
+                reason=reason,
+                retry_count=patient_data.get("_retry_count"),
+            )
+
             log(self.agent._coord_name,
                 f"[EXAME-FALHADO] {nome}: {reason}. Solicitante notificado.",
                 "RED")
@@ -251,7 +260,8 @@ class CoordenadorExames(CoordenadorBase):
                 acc_eq.body = json.dumps({
                     "doente_jid": doente_jid,
                     "nome": nome,
-                    "exam_start_at": exam_start_at
+                    "exam_start_at": exam_start_at,
+                    "spawned_at": patient_data.get("spawned_at")
                 })
                 acc_eq.thread = doente_jid
                 await self.send(acc_eq)
@@ -265,7 +275,8 @@ class CoordenadorExames(CoordenadorBase):
                     "especialidade": exam_specialty,
                     "solicitante": patient_data.get("solicitante"),
                     "tipo_original": patient_data.get("tipo_original", patient_data.get("tipo")),
-                    "exam_start_at": exam_start_at
+                    "exam_start_at": exam_start_at,
+                    "spawned_at": patient_data.get("spawned_at")
                 })
                 acc_med.thread = doente_jid
                 await self.send(acc_med)

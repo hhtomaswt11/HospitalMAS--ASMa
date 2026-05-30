@@ -28,10 +28,11 @@ ASMa-25_26/
 ├── src/
 │   ├── config.py                       # Configuração geral, JIDs, tempos, probabilidades e registry
 │   ├── scheduling.py                   # Helpers de agenda, turnos, slots e validação temporal
+│   ├── state_store.py                  # Estado partilhado thread-safe, métricas e snapshots do dashboard
 │   ├── patch.py                        # Patch de compatibilidade XMPP/SPADE
 │   └── agents/
 │       ├── agente_triagem_geral.py     # Triagem central multi-hospital
-│       ├── supervisor.py               # Supervisores e estado para dashboard
+│       ├── supervisor.py               # Supervisores; recebem eventos e publicam snapshots
 │       ├── Coordinators/
 │       │   ├── coordenador_consultas.py
 │       │   ├── coordenador_urgencias.py
@@ -48,6 +49,7 @@ ASMa-25_26/
 │           └── resource_agent.py
 ├── static/
 │   └── index.html                      # Interface web do dashboard
+├── tests/                              # Testes unitários da lógica pura do sistema
 ├── data/                               # Estado/logs gerados em execução
 └── outputs/                            # Logs de execuções da simulação
 ```
@@ -156,6 +158,17 @@ python3 dashboard.py
 python3 main_sim.py
 ```
 
+### 6.1 Métricas da simulação
+
+O dashboard e o ficheiro `data/dashboard.json` incluem uma secção `metrics`, calculada durante a execução. Atualmente são registadas as seguintes métricas por hospital:
+
+- número de doentes atendidos por tipo: rotina e urgência;
+- tempo médio de espera estimado, calculado entre a criação do agente doente e o início real da primeira consulta;
+- número de doentes/procedimentos que esgotaram o limite de retentativas e falharam sem conseguir alocação;
+- eventos recentes de métricas, úteis para justificar resultados observados na demonstração.
+
+Estas métricas são mantidas em memória durante a execução e são reiniciadas quando a simulação arranca novamente.
+
 ## 7. Fluxos principais implementados
 
 ### 7.1 Consultas de rotina
@@ -261,6 +274,9 @@ ROUTINE_RESERVATION_CONFIRM_TIMEOUT_SECONDS tempo máximo para confirmar médico
 EXAM_MAX_RETRIES                 limite de tentativas para exames
 SURGERY_MAX_RETRIES              limite de tentativas para cirurgias
 INTERNMENT_MAX_RETRIES           limite de tentativas para internamento
+SIM_SHUTDOWN_DRAIN_SECONDS       janela curta para processar mensagens XMPP antes de parar agentes
+PATIENT_SHUTDOWN_GRACE_SECONDS   janela curta para o doente absorver mensagens tardias após alta
+CONTRACT_NET_SEND_REJECT_PROPOSALS por defeito 0; ativa envio explícito de rejects Contract Net apenas para depuração
 ```
 
 
@@ -284,7 +300,35 @@ outputs/
 
 Para uma entrega final, recomenda-se não incluir ficheiros temporários, logs antigos, `.env`, `.git` e pastas `__pycache__`.
 
-## 11. Comando recomendado para demonstração
+
+## 11. Limitações conhecidas e decisões de âmbito
+
+- **Encaminhamento da triagem central:** a limitação anterior em que todos os `routing_update` eram enviados para o supervisor do H1 foi corrigida. Nesta versão, o update é enviado ao supervisor do hospital selecionado; em caso de timeout na consulta de carga, o sistema usa H1 como fallback explícito.
+- **Estado partilhado entre supervisores:** o estado do dashboard já não vive em variáveis globais dentro de `supervisor.py`. Foi movido para `src/state_store.py`, com nomes por hospital (`h1_...`, `h2_...`) e agregação global controlada.
+- **Persistência:** não existe persistência entre execuções. O estado, as métricas e as filas são runtime/in-memory e os ficheiros em `data/` servem apenas para observação durante a execução.
+- **Centros de saúde:** não foi implementado um subsistema de centros de saúde; a entrada dos pacientes é feita por geradores de doentes e pela triagem central/hospitalar.
+- **Dashboard:** o dashboard usa leitura periódica/polling do ficheiro `dashboard.json`; não usa WebSockets nem eventos em tempo real push.
+- **SPADE/XMPP:** o projeto mantém `src/patch.py` por compatibilidade com a forma como algumas versões de SPADE/slixmpp tratam a ligação ao servidor XMPP. O encerramento inclui uma fase de drenagem (`SIM_SHUTDOWN_DRAIN_SECONDS`) para reduzir avisos de mensagens pendentes no final da simulação.
+- **Contract Net:** os recursos só alteram estado quando recebem `accept-proposal`. As mensagens `reject-proposal` são informativas e, por defeito, não são enviadas para evitar ruído assíncrono no terminal; podem ser reativadas com `CONTRACT_NET_SEND_REJECT_PROPOSALS=1`.
+- **Testes:** os testes unitários cobrem lógica pura importante, mas não substituem testes de integração com servidor XMPP real.
+
+## 12. Testes unitários
+
+O projeto inclui testes unitários básicos para validar lógica pura e pontos críticos da simulação:
+
+```bash
+python3 -m pytest -q
+```
+
+Estes testes cobrem:
+
+- perfil de chegadas (`arrival_rate_for_hour`);
+- cálculo de slots de rotina (`find_next_routine_slot_for_pair`);
+- fila base dos coordenadores (`enqueue`/`dequeue`);
+- seleção de recursos no Contract Net (`select_best_resource_pair`);
+- agregação de filas e métricas no `state_store.py`.
+
+## 13. Comando recomendado para demonstração
 
 Para uma demonstração curta e estável:
 
