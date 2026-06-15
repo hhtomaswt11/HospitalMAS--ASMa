@@ -51,6 +51,7 @@ TrabalhoPratico/
 ├── static/
 │   └── index.html
 ├── data/
+├── docs/
 ├── diagrams/
 └── tests/
 ```

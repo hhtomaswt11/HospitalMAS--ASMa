@@ -109,6 +109,7 @@ The project uses:
 │   ├── static/
 │   ├── data/
 │   ├── diagrams/
+│   ├── docs/
 │   └── tests/
 │
 └── README.md
