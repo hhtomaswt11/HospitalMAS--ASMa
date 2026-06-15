@@ -6,8 +6,8 @@ The project explores the use of **Multi-Agent Systems (MAS)** to model, coordina
 
 The repository contains both stages of the work:
 
-* **Research Work**: state-of-the-art analysis of Multi-Agent Systems in healthcare;
-* **Practical Work**: implementation of a multi-hospital simulation using autonomous agents.
+* **TrabalhoInvestigacao (Research Work)**: state-of-the-art analysis of Multi-Agent Systems in healthcare;
+* **TrabalhoPratico (Practical Work)**: implementation of a multi-hospital simulation using autonomous agents.
 
 ## Final Grades
 
@@ -96,7 +96,7 @@ The project uses:
 ├── TrabalhoInvestigacao/
 │   ├── README.md
 │   ├── TrabalhoInvestigacaoG5.pdf
-│   ├── ApresentacaoG5.pdf
+│   ├── ApresentacaoTI.pdf
 │   └── MIA ASMa_2526_Enunciado_TI.pdf
 │
 ├── TrabalhoPratico/

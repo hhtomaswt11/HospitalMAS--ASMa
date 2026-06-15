@@ -160,7 +160,7 @@ This folder contains:
 TrabalhoInvestigacao/
 ├── README.md
 ├── TrabalhoInvestigacaoG5.pdf
-├── ApresentacaoG5.pdf
+├── ApresentacaoTI.pdf
 └── MIA ASMa_2526_Enunciado_TI.pdf
 ```
 
